@@ -148,7 +148,7 @@ def main() -> int:
         destination = DEBS / f"{safe_name(name)}_{safe_name(package['Version'])}_aarch64.deb"
         url = f"{TERMUX_BASE}/{filename}"
         print(f"  {name} {package['Version']}")
-        fetch(url, destination, 800)
+        fetch(url, destination, 64)
         actual = sha256(destination)
         if actual != expected:
             raise RuntimeError(f"SHA256 mismatch for {name}: {actual}")
