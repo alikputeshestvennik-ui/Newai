@@ -13,10 +13,8 @@
 
 ## Сборка
 
-Готовый workflow находится в [`ci/codex-apk.yml`](ci/codex-apk.yml).
-Для включения сборки переместить его в `.github/workflows/codex-apk.yml`
-через GitHub или токен с правом `workflow`. Текущий токен не позволяет
-создавать workflow, поэтому сборка APK пока не запускалась.
+Автоматическая сборка: [`.github/workflows/codex-apk.yml`](.github/workflows/codex-apk.yml).
+Запускается при изменениях приложения и вручную через GitHub Actions.
 
 Workflow `Build NewAI APK` проверяет Python-сервер и Android-код, готовит runtime,
 собирает APK и проверяет подпись. Результат — артефакт `NewAI-signed-apk`.
