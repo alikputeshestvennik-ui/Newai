@@ -295,7 +295,7 @@ object EmbeddedRuntime {
             done
             src=${q(File(stage, "data/data/com.termux/files/usr").absolutePath)}
             if [ -d "${'$'}src" ]; then cp -a "${'$'}src"/. ${q(p.prefix)}/; fi
-            chmod 700 ${q(p.prefix)}/bin/python* ${q(p.prefix)}/bin/git ${q(p.prefix)}/bin/rg 2>/dev/null || true
+            chmod 700 ${q(p.prefix)}/bin/python* ${q(p.prefix)}/bin/git ${q(p.prefix)}/bin/rg ${q(p.prefix)}/bin/node ${q(p.prefix)}/bin/ffmpeg ${q(p.prefix)}/bin/ffprobe 2>/dev/null || true
             if [ ! -e ${q(p.prefix)}/bin/python ]; then ln -s python3 ${q(p.prefix)}/bin/python; fi
             rm -rf ${q(stage.absolutePath)} ${q(debs.absolutePath)}
         """.trimIndent()

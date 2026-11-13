@@ -47,9 +47,7 @@ class CodexOverlayService : Service() {
     private var content: View? = null
     private var host: FrameLayout? = null
     private var openOverlay: View? = null
-    private var titleView: TextView? = null
     private var reasonView: TextView? = null
-    private var answerView: TextView? = null
     private var taskId = ""
     private var sessionId = ""
 
@@ -117,7 +115,7 @@ class CodexOverlayService : Service() {
         window = wm
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(8), dp(10), dp(9))
+            setPadding(dp(12), dp(10), dp(12), dp(11))
             background = GradientDrawable().apply {
                 cornerRadius = dp(14).toFloat()
                 setColor(Th.c.card.toArgb())
@@ -125,39 +123,15 @@ class CodexOverlayService : Service() {
             }
             elevation = dp(6).toFloat()
         }
-        val head = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        titleView = textView(10f, Th.c.accent.toArgb(), true).apply {
-            text = "Вайбкодер · ждёт задачу"
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-        }
-        head.addView(titleView, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        head.addView(textView(17f, Th.c.muted.toArgb(), false).apply {
-            text = "×"
-            gravity = Gravity.CENTER
-            setPadding(dp(8), 0, 0, 0)
-            setOnClickListener { stopSelf() }
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        card.addView(head)
-        reasonView = textView(9f, Th.c.muted.toArgb(), false).apply {
+        reasonView = textView(11f, Th.c.ink.toArgb(), false).apply {
             text = "…"
-            maxLines = 3
+            maxLines = 9
             ellipsize = TextUtils.TruncateAt.END
-            setPadding(0, dp(4), 0, 0)
         }
         card.addView(reasonView)
-        answerView = textView(10f, Th.c.ink.toArgb(), false).apply {
-            maxLines = 4
-            ellipsize = TextUtils.TruncateAt.END
-            setPadding(0, dp(4), 0, 0)
-        }
-        card.addView(answerView)
 
         val layout = WindowManager.LayoutParams(
-            dp(232), WindowManager.LayoutParams.WRAP_CONTENT,
+            dp(300), WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
@@ -189,9 +163,7 @@ class CodexOverlayService : Service() {
         root = null
         content = null
         host = null
-        titleView = null
         reasonView = null
-        answerView = null
     }
 
     private fun setWindowVisible(visible: Boolean) {
@@ -308,30 +280,14 @@ class CodexOverlayService : Service() {
     private fun render(snapshot: JSONObject) {
         val status = snapshot.optString("status")
         val reasoning = snapshot.optString("reasoning").trim()
-        val answer = snapshot.optString("answer").trim()
         val error = snapshot.optString("error").trim()
-        titleView?.text = when (status) {
-            "queued" -> "Вайбкодер · в очереди"
-            "running" -> "Вайбкодер · думает"
-            "done" -> "Вайбкодер · готово"
-            "cancelled" -> "Вайбкодер · остановлено"
-            "failed", "timeout" -> "Вайбкодер · ошибка"
-            "preparing" -> "Вайбкодер · готовлю окружение"
-            else -> "Вайбкодер · ждёт задачу"
-        }
         reasonView?.text = when {
-            error.isNotBlank() -> error.takeLast(1000)
-            reasoning.isNotBlank() -> reasoning.takeLast(700)
+            error.isNotBlank() -> error.takeLast(2400)
+            reasoning.isNotBlank() -> reasoning.takeLast(4000)
             status == "running" -> "…"
-            else -> "Плавающее окно активности"
+            status == "preparing" -> "Готовлю окружение: Linux, Python, Node.js и Codex…"
+            else -> "Вайбкодер ждёт задачу"
         }
-        answerView?.text = when {
-            answer.isNotBlank() -> answer.takeLast(1100)
-            status == "running" -> "Ответ появится здесь"
-            status == "preparing" -> "Первый запуск: Linux, Python и Codex"
-            else -> ""
-        }
-        answerView?.visibility = if (answerView?.text.isNullOrBlank()) View.GONE else View.VISIBLE
     }
 
     private fun textView(size: Float, color: Int, bold: Boolean): TextView = TextView(this).apply {

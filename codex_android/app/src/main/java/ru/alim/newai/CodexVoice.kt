@@ -22,6 +22,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
@@ -31,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -209,6 +211,6 @@ internal fun CodexVoiceInput(onText: (String) -> Unit) {
                         }
                     }
                 }
-            }), contentAlignment = Alignment.Center) { Text("🎙", color = Color(0xFF123F59)) }
+            }), contentAlignment = Alignment.Center) { Icon(rememberVectorPainter(icMic), "Микрофон", tint = Color(0xFF123F59), modifier = Modifier.size(22.dp)) }
     }
 }

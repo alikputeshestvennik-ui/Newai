@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -291,14 +293,14 @@ fun CodexRunBubble(activity: CodexActivity) {
                 ThinkDots()
                 Text("Вайбкодер думает", style = body(11, FontWeight.SemiBold, Teal))
             }
-            Text(
-                activity.reasoning.ifBlank { "Codex обдумывает задачу…" },
-                style = body(13, color = if (activity.reasoning.isBlank()) Muted else Ink), lineHeight = 18.sp,
-                maxLines = 5, overflow = TextOverflow.Ellipsis,
-            )
-            if (activity.answer.isNotBlank()) {
-                Text("Последний ответ", style = body(11, FontWeight.SemiBold, Muted))
-                Text(activity.answer, style = body(13, color = Ink), lineHeight = 18.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            if (activity.reasoning.isBlank()) {
+                Text("Codex обдумывает задачу…", style = body(13, color = Muted), lineHeight = 18.sp)
+            } else {
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = 260.dp).verticalScroll(rememberScrollState()),
+                ) {
+                    Text(activity.reasoning, style = body(13, color = Ink), lineHeight = 18.sp)
+                }
             }
         }
     }

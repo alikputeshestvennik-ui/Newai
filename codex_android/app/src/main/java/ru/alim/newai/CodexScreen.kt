@@ -1,10 +1,13 @@
 package ru.alim.newai
 
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.webkit.WebView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,6 +48,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,8 +58,12 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -63,6 +71,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -272,6 +282,75 @@ private fun MessageBubble(message: Message) {
 
 @Composable
 private fun FileCard(file: Docs.FileRef) {
+    when {
+        file.name.endsWith(".svg", true) || file.name.endsWith(".html", true) || file.name.endsWith(".htm", true) ->
+            if (file.path.isNotBlank()) WebArtifact(file) else DocFileCard(file)
+        file.name.endsWith(".png", true) || file.name.endsWith(".jpg", true) || file.name.endsWith(".jpeg", true) ||
+            file.name.endsWith(".webp", true) || file.name.endsWith(".gif", true) ->
+            if (file.path.isNotBlank()) ImageArtifact(file) else DocFileCard(file)
+        else -> DocFileCard(file)
+    }
+}
+
+private fun openFile(ctx: android.content.Context, file: Docs.FileRef) {
+    runCatching {
+        ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(file.uri, file.mime)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Открыть").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+}
+
+/** Инлайн-превью HTML и SVG, чтобы макеты и рисунки кодом были видны сразу в диалоге. */
+@Composable
+private fun WebArtifact(file: Docs.FileRef) {
+    val ctx = LocalContext.current
+    Column(Modifier.fillMaxWidth().clip(shp(12.dp)).background(Card.copy(alpha = 0.8f))
+        .border(1.dp, Line, shp(12.dp))) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(26.dp).clip(shp(8.dp)).background(Teal), contentAlignment = Alignment.Center) {
+                Text(if (file.name.endsWith(".svg", true)) "SVG" else "HTML", style = body(10, FontWeight.Bold, OnAccent))
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(file.name, style = body(12, FontWeight.SemiBold, Ink), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("Открыть", style = body(12, FontWeight.SemiBold, Teal), modifier = Modifier.clickable { openFile(ctx, file) }.padding(6.dp))
+        }
+        androidx.compose.runtime.key(file.path) {
+            AndroidView(
+                factory = { WebView(it).apply {
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    loadUrl(android.net.Uri.fromFile(java.io.File(file.path)).toString())
+                } },
+                update = { },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ImageArtifact(file: Docs.FileRef) {
+    val ctx = LocalContext.current
+    val bitmap by produceState<ImageBitmap?>(null, file.path) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { BitmapFactory.decodeFile(file.path)?.asImageBitmap() }.getOrNull()
+        }
+    }
+    Column(Modifier.fillMaxWidth().clip(shp(12.dp)).background(Card.copy(alpha = 0.8f))
+        .border(1.dp, Line, shp(12.dp))) {
+        val bmp = bitmap
+        if (bmp != null) {
+            Image(bmp, file.name, Modifier.fillMaxWidth().heightIn(max = 420.dp), contentScale = ContentScale.FillWidth)
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(file.name, style = body(12, FontWeight.SemiBold, Ink), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("Открыть", style = body(12, FontWeight.SemiBold, Teal), modifier = Modifier.clickable { openFile(ctx, file) }.padding(6.dp))
+        }
+    }
+}
+
+@Composable
+private fun DocFileCard(file: Docs.FileRef) {
     val ctx = LocalContext.current
     val badge = when {
         file.name.endsWith(".pdf", true) -> "PDF"
@@ -279,12 +358,7 @@ private fun FileCard(file: Docs.FileRef) {
         else -> "DOC"
     }
     Row(Modifier.fillMaxWidth().clip(shp(12.dp)).background(Card.copy(alpha = 0.7f))
-        .clickable {
-            runCatching {
-                ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(file.uri, file.mime)
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Открыть").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            }
-        }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        .clickable { openFile(ctx, file) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(40.dp).clip(shp(10.dp)).background(Teal), contentAlignment = Alignment.Center) {
             Text(badge, style = body(11, FontWeight.Bold, OnAccent))
         }

@@ -34,7 +34,7 @@ BOOTSTRAP_MIRROR = (
 BOOTSTRAP_SHA256 = "ea2aeba8819e517db711f8c32369e89e7c52cee73e07930ff91185e1ab93f4f3"
 TERMUX_BASE = "https://packages.termux.dev/apt/termux-main"
 TERMUX_INDEX = f"{TERMUX_BASE}/dists/stable/main/binary-aarch64/Packages"
-PACKAGES = ("python", "python-pip", "git", "gh", "ripgrep", "zip", "unzip", "jq")
+PACKAGES = ("python", "python-pip", "git", "gh", "ripgrep", "zip", "unzip", "jq", "nodejs", "ffmpeg")
 USER_AGENT = {"User-Agent": "ten-android-runtime/1.0"}
 
 

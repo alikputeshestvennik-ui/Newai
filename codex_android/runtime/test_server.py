@@ -148,6 +148,19 @@ class BridgeTest(unittest.TestCase):
         with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
             self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "deepseek:deepseek-flash", "provider_token": "test-secret"})[0], 200)
 
+    def test_reasoning_accumulates_all_items(self):
+        task = self.bridge.Task("reason-task")
+        self.bridge.handle_event(task, {"type": "item.completed", "item": {"id": "rs_1", "type": "reasoning", "summary": [{"type": "summary_text", "text": "Первый шаг"}]}})
+        self.bridge.handle_event(task, {"type": "item.completed", "item": {"id": "rs_2", "type": "reasoning", "summary": [{"type": "summary_text", "text": "Второй шаг"}]}})
+        self.assertIn("Первый шаг", task.last_reasoning)
+        self.assertIn("Второй шаг", task.last_reasoning)
+
+    def test_reasoning_deduplicates_by_item_id(self):
+        task = self.bridge.Task("reason-dedup")
+        self.bridge.handle_event(task, {"type": "item.updated", "item": {"id": "rs_1", "type": "reasoning", "summary": [{"type": "summary_text", "text": "частично"}]}})
+        self.bridge.handle_event(task, {"type": "item.completed", "item": {"id": "rs_1", "type": "reasoning", "summary": [{"type": "summary_text", "text": "полный текст"}]}})
+        self.assertEqual(task.last_reasoning, "полный текст")
+
     def test_anymodel_native_id_requires_key(self):
         self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "cc/claude-opus-5-5"})[0], 400)
 

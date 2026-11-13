@@ -15,7 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-object Docs { data class FileRef(val name: String, val uri: Uri, val mime: String) }
+object Docs { data class FileRef(val name: String, val uri: Uri, val mime: String, val path: String = "") }
 
 object ModelRouting {
     fun isChatGpt(model: String) = model.startsWith("chatgpt:")
@@ -134,7 +134,7 @@ object Sessions {
                         text = m.optString("text", ""),
                         files = (0 until files.length()).map { k ->
                             val f = files.getJSONObject(k)
-                            Docs.FileRef(f.optString("name"), Uri.parse(f.optString("uri")), f.optString("mime", "application/octet-stream"))
+                            Docs.FileRef(f.optString("name"), Uri.parse(f.optString("uri")), f.optString("mime", "application/octet-stream"), f.optString("path", ""))
                         },
                         ts = m.optLong("ts", System.currentTimeMillis()),
                     )
@@ -194,7 +194,7 @@ object Sessions {
             session.messages.forEach { m ->
                 val files = JSONArray()
                 m.files.forEach { f ->
-                    files.put(JSONObject().put("name", f.name).put("uri", f.uri.toString()).put("mime", f.mime))
+                    files.put(JSONObject().put("name", f.name).put("uri", f.uri.toString()).put("mime", f.mime).put("path", f.path))
                 }
                 messages.put(JSONObject().put("id", m.id).put("role", m.role).put("text", m.text)
                     .put("ts", m.ts).put("files", files))

@@ -63,6 +63,8 @@ class Task:
         self.finished = 0.0
         self.last_reasoning = ""
         self.last_answer = ""
+        self.reasoning_items: dict[str, str] = {}
+        self.answer_items: dict[str, str] = {}
         self.error = ""
         self.last_tool_error = ""
         self.tool_successes = 0
@@ -71,14 +73,30 @@ class Task:
         self.files: list[dict] = []
         self.lock = threading.Lock()
 
+    def record_reasoning(self, item_id: str, text: str) -> None:
+        if not text:
+            if item_id and item_id not in self.reasoning_items:
+                self.reasoning_items[item_id] = ""
+            return
+        key = item_id or f"part-{len(self.reasoning_items)}"
+        self.reasoning_items[key] = text
+        self.last_reasoning = "\n\n".join(v for v in self.reasoning_items.values() if v.strip())
+
+    def record_answer(self, item_id: str, text: str) -> None:
+        if not text:
+            return
+        key = item_id or f"part-{len(self.answer_items)}"
+        self.answer_items[key] = text
+        self.last_answer = "\n\n".join(v for v in self.answer_items.values() if v.strip())
+
     def snapshot(self) -> dict:
         return {
             "task_id": self.id,
             "status": self.status,
             "started": self.started,
             "finished": self.finished,
-            "reasoning": self.last_reasoning[-4000:],
-            "answer": self.last_answer[-8000:],
+            "reasoning": self.last_reasoning[-60000:],
+            "answer": self.last_answer[-16000:],
             "error": self.error[-2000:],
             "tool_error": self.last_tool_error[-2000:],
             "tool_successes": self.tool_successes,
@@ -240,18 +258,17 @@ def handle_event(task: Task, event: dict) -> None:
                 task.last_tool_error = message[-2000:]
             return
         text = _reasoning_text(item)
-        if not text:
-            return
+        item_id = str(item.get("id") or "")
         if "reasoning" in item_type or "thought" in item_type or "plan" in item_type:
-            task.last_reasoning = text[-4000:]
-        elif "message" in item_type or "assistant" in item_type:
-            task.last_answer = text[-8000:]
+            task.record_reasoning(item_id, text)
+        elif "message" in item_type or "assistant" in item_type or item_type == "agent_message":
+            task.record_answer(item_id, text)
     elif kind == "turn.completed":
         response = event.get("response") or {}
         if isinstance(response, dict):
             output = _reasoning_text(response)
             if output:
-                task.last_answer = output[-8000:]
+                task.last_answer = output[-16000:]
 
 
 def run_process(task: Task, command: list[str], prompt: str, env: dict, output: Path, timeout: int) -> subprocess.CompletedProcess:
