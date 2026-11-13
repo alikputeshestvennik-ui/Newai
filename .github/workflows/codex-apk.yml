@@ -32,19 +32,39 @@ jobs:
         run: python3 codex_android/scripts/prepare_runtime_assets.py
       - name: Prepare signing key
         env:
-          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           set -euo pipefail
           test -n "$ANDROID_KEYSTORE_B64"
           printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/newai.keystore"
           test -s "$RUNNER_TEMP/newai.keystore"
+          test -n "$ANDROID_STORE_PASSWORD"
+          keytool -J-Duser.language=en -J-Duser.country=US -list -v \
+            -keystore "$RUNNER_TEMP/newai.keystore" \
+            -storepass:env ANDROID_STORE_PASSWORD > "$RUNNER_TEMP/newai-key-info.txt"
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          listing = Path(os.environ["RUNNER_TEMP"], "newai-key-info.txt").read_text()
+          aliases = []
+          alias = None
+          for line in listing.splitlines():
+              if line.startswith("Alias name: "):
+                  alias = line.removeprefix("Alias name: ")
+              elif line.strip() == "Entry type: PrivateKeyEntry" and alias is not None:
+                  aliases.append(alias)
+          if len(aliases) != 1:
+              raise SystemExit("Expected exactly one private signing key in keystore")
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"ANDROID_KEY_ALIAS={aliases[0]}\n")
+          PYTHON
       - name: Build signed APK
         working-directory: codex_android
         env:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/newai.keystore
-          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
         run: |
           set -euo pipefail
           test -n "$ANDROID_STORE_PASSWORD"
@@ -64,4 +84,4 @@ jobs:
           if-no-files-found: error
       - name: Remove signing key
         if: always()
-        run: rm -f "$RUNNER_TEMP/newai.keystore"
+        run: rm -f "$RUNNER_TEMP/newai.keystore" "$RUNNER_TEMP/newai-key-info.txt"
