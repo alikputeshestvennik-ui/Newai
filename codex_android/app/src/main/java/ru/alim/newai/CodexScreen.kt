@@ -1,8 +1,8 @@
 package ru.alim.newai
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -46,7 +46,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,12 +63,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -82,18 +75,12 @@ fun CodexScreen(onSettings: () -> Unit) {
     val session = Sessions.current
     val activity = rememberCodexActivity(session)
     val list = rememberLazyListState()
-    val scope = rememberCoroutineScope()
     var composerFocused by remember { mutableStateOf(false) }
     var composerH by remember { mutableIntStateOf(190) }
     var askDelete by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf<String?>(null) }
-    var listening by remember { mutableStateOf(false) }
-    var transcribing by remember { mutableStateOf(false) }
-    var seconds by remember { mutableIntStateOf(0) }
-    var voice by remember { mutableStateOf<CodexVoiceSession?>(null) }
-
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        hint = if (ok) "Микрофон разрешён — нажми ещё раз" else "Нужен доступ к микрофону"
+    val attachPick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        attachFiles(ctx, session, uris)
     }
 
     fun send() {
@@ -118,49 +105,6 @@ fun CodexScreen(onSettings: () -> Unit) {
         if (Prefs.floatingOverlay) CodexOverlayService.start(ctx, session.taskId, session.id)
     }
 
-    fun startVoice() {
-        if (listening || transcribing) return
-        val key = runCatching { CodexGateway.deepSeekAsrKey(ctx) }.getOrDefault("")
-        if (key.isBlank()) { hint = "Для диктовки добавь ключ DeepSeek в настройках"; return }
-        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            permission.launch(Manifest.permission.RECORD_AUDIO)
-            return
-        }
-        val current = CodexVoiceSession()
-        voice = current
-        listening = true
-        seconds = 0
-        hint = null
-        scope.launch {
-            try {
-                val wav = withContext(Dispatchers.IO) { current.record() }
-                listening = false
-                if (!current.cancelled) {
-                    transcribing = true
-                    val text = withContext(Dispatchers.IO) { current.transcribe(wav, key) }
-                    session.draft = (session.draft + " " + text).trim().take(4000)
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (!current.cancelled) hint = e.message ?: "Не удалось распознать речь"
-            } finally {
-                listening = false
-                transcribing = false
-                if (voice === current) voice = null
-            }
-        }
-    }
-
-    fun finishVoice(cancel: Boolean) {
-        val current = voice ?: return
-        if (cancel) current.cancel() else current.stop = true
-    }
-
-    LaunchedEffect(listening) {
-        var n = 0
-        while (listening) { delay(1000); n++; seconds = n }
-    }
     LaunchedEffect(session.id, session.messages.size) {
         if (session.messages.isNotEmpty()) runCatching { list.animateScrollToItem(0) }
     }
@@ -186,8 +130,7 @@ fun CodexScreen(onSettings: () -> Unit) {
         }
         Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(topPad)
             .background(Brush.verticalGradient(listOf(Bg.copy(alpha = 0.98f), Bg.copy(alpha = 0.82f), Color.Transparent))))
-        CodexTopBar(session, activity.running, onExit = { (ctx as? android.app.Activity)?.finish() },
-            onSettings = onSettings, onDelete = { askDelete = true })
+        CodexTopBar(session, activity.running, onSettings = onSettings, onDelete = { askDelete = true })
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding()
             .padding(horizontal = 10.dp).padding(top = 4.dp, bottom = 10.dp)
@@ -199,19 +142,6 @@ fun CodexScreen(onSettings: () -> Unit) {
             if (composerFocused) CodexKeyboardBar(session)
             CodexRunBubble(activity)
             hint?.let { Text(it, style = body(12, color = Danger), modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) }
-            if (listening || transcribing) {
-                Row(Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(shp(12.dp)).background(AccentSoft)
-                    .padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                    ThinkDots()
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (transcribing) "DeepSeek · распознаю…" else "Слушаю… %d:%02d".format(seconds / 60, seconds % 60),
-                        style = body(12, FontWeight.SemiBold, Teal), modifier = Modifier.weight(1f))
-                    if (listening) {
-                        Text("Отмена", style = body(12, color = Muted), modifier = Modifier.clickable { finishVoice(true) }.padding(6.dp))
-                        Text("Готово", style = body(12, FontWeight.SemiBold, Teal), modifier = Modifier.clickable { finishVoice(false) }.padding(6.dp))
-                    }
-                }
-            }
             Box(Modifier.fillMaxWidth().heightIn(min = 46.dp)) {
                 Row(Modifier.fillMaxWidth().padding(end = 56.dp).heightIn(min = 48.dp).clip(shp(24.dp))
                     .background(Card).border(1.dp, Line, shp(24.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
@@ -224,31 +154,27 @@ fun CodexScreen(onSettings: () -> Unit) {
                             inner()
                         })
                     Spacer(Modifier.width(8.dp))
-                    Icon(rememberVectorPainter(icFile), "Файлы задачи", tint = Muted,
-                        modifier = Modifier.size(34.dp).clickable { hint = "Файлы создаются Codex и появятся в ответе" }.padding(6.dp))
+                    Icon(rememberVectorPainter(icClip), "Прикрепить файл", tint = Muted,
+                        modifier = Modifier.size(36.dp).clickable { attachPick.launch(arrayOf("*/*")) }.padding(6.dp))
                 }
                 val canSend = session.draft.isNotBlank()
-                val showStop = session.busy && !canSend && !listening && !transcribing
-                Box(Modifier.align(Alignment.BottomEnd).size(48.dp).clip(circ).background(Teal).clickable(onClickLabel = when {
-                    listening -> "Закончить запись"
-                    showStop -> "Остановить Codex"
-                    canSend -> "Отправить"
-                    else -> "Голосовой ввод"
-                }) {
-                    when {
-                        listening -> finishVoice(false)
-                        showStop -> AppNav.stop(session)
-                        canSend -> send()
-                        transcribing -> Unit
-                        else -> startVoice()
+                val showStop = session.busy && !canSend
+                if (!canSend && !showStop) {
+                    Box(Modifier.align(Alignment.BottomEnd)) {
+                        androidx.compose.runtime.key(session.id) {
+                            CodexVoiceInput { transcript ->
+                                session.draft = if (session.draft.isBlank()) transcript
+                                    else session.draft.trimEnd() + " " + transcript
+                            }
+                        }
                     }
-                }, contentAlignment = Alignment.Center) {
-                    when {
-                        listening -> Box(Modifier.size(13.dp).clip(shp(3.dp)).background(OnAccent))
-                        showStop -> Icon(rememberVectorPainter(icStop), "Остановить", tint = OnAccent, modifier = Modifier.size(21.dp))
-                        canSend -> Icon(rememberVectorPainter(icSend), "Отправить", tint = OnAccent, modifier = Modifier.size(21.dp))
-                        transcribing -> ThinkDots(OnAccent)
-                        else -> Icon(rememberVectorPainter(icMic), "Голосовой ввод", tint = OnAccent, modifier = Modifier.size(22.dp))
+                } else {
+                    Box(Modifier.align(Alignment.BottomEnd).size(48.dp).clip(circ).background(Teal)
+                        .clickable(onClickLabel = if (showStop) "Остановить Codex" else "Отправить") {
+                            if (showStop) AppNav.stop(session) else send()
+                        }, contentAlignment = Alignment.Center) {
+                        if (showStop) Icon(rememberVectorPainter(icStop), "Остановить", tint = OnAccent, modifier = Modifier.size(21.dp))
+                        else Icon(rememberVectorPainter(icSend), "Отправить", tint = OnAccent, modifier = Modifier.size(21.dp))
                     }
                 }
             }
@@ -274,6 +200,32 @@ fun CodexScreen(onSettings: () -> Unit) {
 
 private fun Modifier.onFocusChangedCompat(onChange: (Boolean) -> Unit): Modifier =
     this.onFocusChanged { onChange(it.isFocused) }
+
+/** Копирует выбранные файлы в рабочую папку локального Codex и подставляет их пути в сообщение. */
+private fun attachFiles(ctx: android.content.Context, session: CodexSession, uris: List<Uri>) {
+    if (uris.isEmpty()) return
+    val workspace = java.io.File(java.io.File(EmbeddedRuntime.paths(ctx).tenHome, "workspace"), session.taskId)
+    workspace.mkdirs()
+    val added = mutableListOf<String>()
+    for (uri in uris) {
+        val name = runCatching {
+            ctx.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx) else null
+            }
+        }.getOrNull().orEmpty().ifBlank { "file_${System.currentTimeMillis()}" }
+        val dest = java.io.File(workspace, name)
+        runCatching {
+            ctx.contentResolver.openInputStream(uri)?.use { input ->
+                dest.outputStream().use { input.copyTo(it) }
+            }
+        }.onSuccess { added += dest.absolutePath }
+    }
+    if (added.isNotEmpty()) {
+        session.draft = (session.draft + "\n" + added.joinToString("\n")).trim().take(4000)
+        Sessions.save()
+    }
+}
 
 @Composable
 private fun EmptyCodex() {

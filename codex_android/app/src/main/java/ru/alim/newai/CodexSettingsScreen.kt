@@ -1,6 +1,8 @@
 package ru.alim.newai
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -47,6 +49,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -72,6 +75,8 @@ fun CodexSettingsScreen(back: () -> Unit) {
             RuntimeCard()
 
             OverlayCard()
+
+            PermissionsCard()
 
             CardBox {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -136,6 +141,35 @@ fun CodexSettingsScreen(back: () -> Unit) {
 
 @Composable
 private fun LocalCtx() = androidx.compose.ui.platform.LocalContext.current
+
+@Composable
+private fun PermissionsCard() {
+    val ctx = LocalCtx()
+    val mic = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    val overlay = Settings.canDrawOverlays(ctx)
+    val micRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val overlayRequest = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+    CardBox {
+        Text("Разрешения", style = body(16, FontWeight.SemiBold))
+        Text("Микрофон нужен для диктовки, а окно поверх приложений — для компактного статуса Вайбкодера.",
+            style = body(12, color = Muted), lineHeight = 16.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (mic) "Микрофон: разрешён" else "Микрофон: не разрешён",
+                style = body(13, color = if (mic) Teal else Amber), modifier = Modifier.weight(1f))
+            if (!mic) TextButton({ micRequest.launch(Manifest.permission.RECORD_AUDIO) }) { Text("Разрешить", color = Teal) }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (overlay) "Поверх приложений: разрешено" else "Поверх приложений: не разрешено",
+                style = body(13, color = if (overlay) Teal else Amber), modifier = Modifier.weight(1f))
+            if (!overlay) TextButton({
+                runCatching {
+                    overlayRequest.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+            }) { Text("Открыть", color = Teal) }
+        }
+    }
+}
 
 @Composable
 private fun RuntimeCard() {

@@ -34,7 +34,10 @@ internal object ChatGptAccount {
     private fun value(key: String) = prefs.getString(key, "").orEmpty()
     val email get() = if (::prefs.isInitialized) value("email") else ""
     val connected get() = ::prefs.isInitialized && value("access").isNotEmpty()
-    val allowed get() = connected && value("scope").split(' ').contains("chatgpt.tokens.use.direct")
+    val allowed get() = connected && value("scope").split(' ').any {
+        it == "chatgpt.tokens.use.direct" || it == "resource.invoke"
+    }
+    val accountId get() = value("account").ifBlank { value("subject") }
     val busy get() = listener != null
     val models: List<String> get() = if (!::prefs.isInitialized || !allowed) emptyList() else value("models").lines().filter { it.isNotBlank() }.map { "chatgpt:$it" }
 
@@ -54,6 +57,7 @@ internal object ChatGptAccount {
         if (t.has("refresh_token")) edit.putString("refresh", t.getString("refresh_token"))
         if (t.has("scope")) edit.putString("scope", t.getString("scope"))
         if (t.has("id_token")) edit.putString("id", t.getString("id_token"))
+        if (t.has("account_id")) edit.putString("account", t.getString("account_id"))
         check(edit.commit()) { "Не удалось сохранить подключение" }
     }
     @Synchronized fun access(): String {
@@ -68,7 +72,7 @@ internal object ChatGptAccount {
         return value("access")
     }
     fun refreshModels() {
-        val ids = ChatGptResponses.models(access()).map { it.id }
+        val ids = ChatGptResponses.models(access(), accountId).map { it.id }
         prefs.edit().putString("models", ids.joinToString("\n")).commit()
     }
     fun cancel() { listener?.close() }
@@ -126,7 +130,10 @@ internal object ChatGptAccount {
                 prefs.edit().putString("subject", claims.getString("sub")).putString("email", claims.optString("email")).commit()
                 save(t)
             }
-            status = if (allowed) { refreshModels(); "Подписка подключена" } else "Вход выполнен. Использование подписки не разрешено."
+            status = if (allowed) {
+                runCatching { refreshModels() }
+                "Подписка подключена"
+            } else "Вход выполнен. Использование подписки не разрешено."
         } finally { server.close(); if (listener === server) listener = null }
     }
 

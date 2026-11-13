@@ -83,11 +83,10 @@ object Providers {
         return provider.models.map { provider.runtimeModel(it) }
     }
 
-    fun label(providerId: String, model: String): String {
-        val provider = find(providerId)?.name ?: "Провайдер"
-        val name = model.substringAfter(':', model)
-        return "$name · $provider"
-    }
+    fun modelName(model: String): String = model.substringAfter(':', model)
+
+    /** Имя модели без префикса провайдера: провайдер уже виден в соседнем селекторе. */
+    fun label(providerId: String, model: String): String = modelName(model)
 
     fun firstRuntimeModel(providerId: String): String = choices(providerId).firstOrNull().orEmpty()
 

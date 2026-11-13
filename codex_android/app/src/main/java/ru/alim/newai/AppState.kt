@@ -94,6 +94,7 @@ class CodexSession(
     var busy by mutableStateOf(false)
     var progress by mutableStateOf("")
     var pending by mutableStateOf("")
+    var reasoningEffort by mutableStateOf("medium")
 }
 
 /** Несколько независимых диалогов; у каждого свой провайдер, модель и локальная задача. */
@@ -122,6 +123,7 @@ object Sessions {
                 session.draft = item.optString("draft", "")
                 session.providerId = item.optString("provider", "")
                 session.model = item.optString("model", "")
+                session.reasoningEffort = item.optString("effort", "medium")
                 val messages = item.optJSONArray("messages") ?: JSONArray()
                 for (n in 0 until messages.length()) {
                     val m = messages.getJSONObject(n)
@@ -199,7 +201,7 @@ object Sessions {
             }
             array.put(JSONObject().put("id", session.id).put("name", session.name).put("task_id", session.taskId)
                 .put("created", session.created).put("draft", session.draft).put("provider", session.providerId)
-                .put("model", session.model).put("messages", messages))
+                .put("model", session.model).put("effort", session.reasoningEffort).put("messages", messages))
         }
         storage.edit().putString("items", array.toString()).apply()
     }

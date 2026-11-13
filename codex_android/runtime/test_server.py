@@ -134,6 +134,20 @@ class BridgeTest(unittest.TestCase):
         with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
             self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "chatgpt:gpt-5.1-codex", "provider_token": "chatgpt-token"})[0], 200)
 
+    def test_reasoning_effort_passed_to_codex(self):
+        def inspect(task, args, prompt, env, output, timeout):
+            self.assertIn('model_reasoning_effort="high"', str(args))
+
+        with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
+            self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "deepseek:deepseek-flash", "provider_token": "test-secret", "reasoning_effort": "high"})[0], 200)
+
+    def test_reasoning_effort_defaults_to_medium(self):
+        def inspect(task, args, prompt, env, output, timeout):
+            self.assertIn('model_reasoning_effort="medium"', str(args))
+
+        with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
+            self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "deepseek:deepseek-flash", "provider_token": "test-secret"})[0], 200)
+
     def test_anymodel_native_id_requires_key(self):
         self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "cc/claude-opus-5-5"})[0], 400)
 

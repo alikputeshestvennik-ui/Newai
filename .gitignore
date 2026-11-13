@@ -6,3 +6,5 @@
 **/*.jks
 codex_android/app/src/main/assets/bootstrap-aarch64.zip
 codex_android/app/src/main/assets/runtime/
+
+**/.kotlin/

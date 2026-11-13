@@ -92,7 +92,8 @@ class TaskService : Service() {
                 try {
                     val answer = withContext(Dispatchers.IO) {
                         CodexGateway.run(applicationContext, goal, model, session.taskId,
-                            CodexGateway.RunProvider(provider.kind, provider.baseUrl, key))
+                            CodexGateway.RunProvider(provider.kind, provider.baseUrl, key),
+                            session.reasoningEffort.ifBlank { "medium" })
                     }
                     session.messages += Message(role = "codex", text = answer.text, files = answer.files)
                 } catch (e: CancellationException) {

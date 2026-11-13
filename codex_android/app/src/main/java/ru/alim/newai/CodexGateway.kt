@@ -135,7 +135,7 @@ object CodexGateway {
         throw lastError ?: java.io.IOException("Не удалось запустить локальный Codex")
     }
 
-    fun run(ctx: Context, goal: String, selected: String, taskId: String = "default", runProvider: RunProvider? = null): Result {
+    fun run(ctx: Context, goal: String, selected: String, taskId: String = "default", runProvider: RunProvider? = null, reasoningEffort: String = "medium"): Result {
         require(goal.length <= 16000) { "Задача слишком длинная" }
         val routed = ModelRouting.codexModel(selected)
         EmbeddedRuntime.startAsync(ctx)
@@ -157,6 +157,7 @@ object CodexGateway {
         require(kind == Providers.CHATGPT || providerToken.isNotBlank()) { "Сначала сохрани API-ключ выбранного провайдера" }
         val body = JSONObject().put("goal", goal).put("selected", routed)
             .put("provider_token", providerToken).put("task_id", taskId)
+            .put("reasoning_effort", reasoningEffort.takeIf { it in setOf("low", "medium", "high") } ?: "medium")
         if (kind == Providers.CUSTOM) {
             val base = runProvider?.baseUrl?.trim().orEmpty()
             require(base.startsWith("https://")) { "Сначала укажи HTTPS-адрес провайдера" }

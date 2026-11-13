@@ -426,7 +426,7 @@ def codex_runtime_config(env: dict[str, str]) -> list[str]:
 
 
 def execute_task(task: Task, goal: str, selected: str, provider_token: str,
-                 base_url: str, gh_token: str) -> tuple[int, dict]:
+                 base_url: str, gh_token: str, reasoning_effort: str = "medium") -> tuple[int, dict]:
     """Run Codex and return an HTTP-style status and JSON payload.
 
     Both /run (compatibility) and /start (preferred by the Android client) use
@@ -466,6 +466,8 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
                 "-c", 'model_providers.ten_provider.wire_api="responses"',
                 "-c", "model_providers.ten_provider.requires_openai_auth=false",
             ]
+        if reasoning_effort in {"low", "medium", "high"}:
+            command += ["-c", "model_reasoning_effort=" + json.dumps(reasoning_effort)]
         command.append("-")
         env = os.environ.copy()
         if gh_token and isinstance(gh_token, str) and gh_token.strip():
@@ -605,6 +607,7 @@ class Handler(BaseHTTPRequestHandler):
         provider_token = request.get("provider_token", "")
         base_url = request.get("base_url", "")
         gh_token = request.get("gh_token", "")
+        reasoning_effort = request.get("reasoning_effort", "medium")
         if not isinstance(selected, str) or not re.fullmatch(r"[a-zA-Z0-9._/:\-]{0,160}", selected):
             return self.reply(400, {"error": "Некорректная модель"})
         backend = None
@@ -637,14 +640,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/start" or request.get("background") is True:
             task.status = "queued"
             def worker() -> None:
-                status, payload = execute_task(task, goal, selected, provider_token, base_url, gh_token)
+                status, payload = execute_task(task, goal, selected, provider_token, base_url, gh_token, reasoning_effort)
                 if status != 200 and task.status not in ("cancelled", "timeout"):
                     task.status = "failed"
                     task.error = str(payload.get("error", "Ошибка локального Codex"))[-2000:]
                 task.finished = time.time()
             threading.Thread(target=worker, name="codex-task-" + task_id, daemon=True).start()
             return self.reply(202, {"status": "started", "task_id": task_id})
-        status, payload = execute_task(task, goal, selected, provider_token, base_url, gh_token)
+        status, payload = execute_task(task, goal, selected, provider_token, base_url, gh_token, reasoning_effort)
         return self.reply(status, payload)
 
 

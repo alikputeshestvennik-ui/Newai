@@ -6,9 +6,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,10 +25,13 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -89,10 +94,12 @@ private fun CodexBarButton(icon: ImageVector, label: String, size: Int = 40, onC
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CodexTopBar(session: CodexSession, running: Boolean, onExit: () -> Unit, onSettings: () -> Unit, onDelete: () -> Unit) {
+fun CodexTopBar(session: CodexSession, running: Boolean, onSettings: () -> Unit, onDelete: () -> Unit) {
     val chats = Sessions.list
     val strip = rememberLazyListState()
+    var renameTarget by remember { mutableStateOf<CodexSession?>(null) }
     LaunchedEffect(session.id, chats.size) {
         val index = chats.indexOfFirst { it.id == session.id }
         if (index >= 0) runCatching { strip.animateScrollToItem(index) }
@@ -103,7 +110,6 @@ fun CodexTopBar(session: CodexSession, running: Boolean, onExit: () -> Unit, onS
             .border(1.dp, Line, shp(24.dp)).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CodexBarButton(icExit, "Выйти из Вайбкодера", onClick = onExit)
         LazyRow(
             Modifier.weight(1f).height(36.dp),
             state = strip,
@@ -117,7 +123,12 @@ fun CodexTopBar(session: CodexSession, running: Boolean, onExit: () -> Unit, onS
                     Modifier.height(32.dp).clip(shp(16.dp))
                         .background(if (selected) AccentSoft else Color.Transparent)
                         .border(1.dp, if (selected) Teal.copy(alpha = 0.55f) else Color.Transparent, shp(16.dp))
-                        .clickable(onClickLabel = "Открыть ${chat.name}") { Sessions.open(chat.id) }
+                        .combinedClickable(
+                            onClickLabel = "Открыть ${chat.name}",
+                            onClick = { Sessions.open(chat.id) },
+                            onLongClickLabel = "Переименовать ${chat.name}",
+                            onLongClick = { renameTarget = chat },
+                        )
                         .padding(horizontal = 10.dp),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -134,6 +145,26 @@ fun CodexTopBar(session: CodexSession, running: Boolean, onExit: () -> Unit, onS
         CodexBarButton(icGear, "Настройки Вайбкодера", onClick = onSettings)
         CodexBarButton(icTrash, "Удалить диалог", onClick = onDelete)
     }
+
+    renameTarget?.let { chat ->
+        var draft by remember(chat.id) { mutableStateOf(chat.name) }
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("Переименовать диалог") },
+            text = {
+                OutlinedTextField(draft, { draft = it.take(40) }, Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text("Название") })
+            },
+            confirmButton = {
+                TextButton({
+                    val name = draft.trim()
+                    if (name.isNotEmpty()) { chat.name = name; Sessions.save() }
+                    renameTarget = null
+                }) { Text("Сохранить", color = Teal) }
+            },
+            dismissButton = { TextButton({ renameTarget = null }) { Text("Отмена", color = Muted) } },
+        )
+    }
 }
 
 @Composable
@@ -149,6 +180,7 @@ fun CodexKeyboardBar(session: CodexSession) {
     val shownModel = session.model.takeIf { it.isNotBlank() } ?: autoModel
     var providerOpen by remember(session.id) { mutableStateOf(false) }
     var modelOpen by remember(session.id) { mutableStateOf(false) }
+    var effortOpen by remember(session.id) { mutableStateOf(false) }
 
     LaunchedEffect(providerId, provider?.models?.size) {
         if (provider != null && provider.models.isEmpty() && !Providers.refreshing[providerId].orFalse()) {
@@ -161,9 +193,16 @@ fun CodexKeyboardBar(session: CodexSession) {
         scope.launch { Providers.refresh(ctx, id) }
     }
 
+    val effort = session.reasoningEffort.ifBlank { "medium" }
+    val effortLabel = when (effort) {
+        "low" -> "Низкая"
+        "high" -> "Высокая"
+        else -> "Средняя"
+    }
+
     Column(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(Modifier.weight(0.9f)) {
+            Box(Modifier.weight(0.75f)) {
                 PickerButton(icProvider, provider?.name ?: "Провайдер", "Выбрать провайдера", Modifier.fillMaxWidth()) { providerOpen = true }
                 DropdownMenu(providerOpen, { providerOpen = false }, modifier = Modifier.heightIn(max = 340.dp), shape = shp(16.dp),
                     containerColor = Card, properties = PopupProperties(focusable = false)) {
@@ -182,11 +221,13 @@ fun CodexKeyboardBar(session: CodexSession) {
                             },
                         )
                     }
-                    DropdownMenuItem(text = { Text("Добавить провайдера в настройках…", style = body(13, color = Teal)) },
-                        onClick = { providerOpen = false; AppNav.settingsOpen = true })
+                    DropdownMenuItem(
+                        text = { Text("+", style = body(15, FontWeight.Bold, Teal)) },
+                        onClick = { providerOpen = false; AppNav.settingsOpen = true },
+                    )
                 }
             }
-            Box(Modifier.weight(1.1f)) {
+            Box(Modifier.weight(1.2f)) {
                 PickerButton(icBrain, when {
                     shownModel.isBlank() -> "Нет моделей"
                     session.model.isBlank() -> "Авто · ${Providers.label(providerId, shownModel)}"
@@ -210,6 +251,20 @@ fun CodexKeyboardBar(session: CodexSession) {
                     }
                     DropdownMenuItem(text = { Text(if (Providers.refreshing[providerId].orFalse()) "Загружаю модели…" else "Обновить список моделей", style = body(13, color = Teal)) },
                         onClick = { loadModels(); modelOpen = false })
+                }
+            }
+            Box(Modifier.weight(0.85f)) {
+                PickerButton(icSpark, effortLabel, "Степень рассуждения", Modifier.fillMaxWidth()) { effortOpen = true }
+                DropdownMenu(effortOpen, { effortOpen = false }, shape = shp(16.dp), containerColor = Card,
+                    properties = PopupProperties(focusable = false)) {
+                    listOf("low" to "Низкая", "medium" to "Средняя", "high" to "Высокая").forEach { (id, label) ->
+                        val selected = id == effort
+                        DropdownMenuItem(
+                            text = { Text(label, style = body(13, if (selected) FontWeight.SemiBold else FontWeight.Normal, if (selected) Teal else Ink)) },
+                            trailingIcon = if (selected) ({ Text("✓", style = body(13, FontWeight.Bold, Teal)) }) else null,
+                            onClick = { session.reasoningEffort = id; Sessions.save(); effortOpen = false },
+                        )
+                    }
                 }
             }
         }
