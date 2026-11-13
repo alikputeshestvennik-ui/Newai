@@ -24,6 +24,15 @@ class BridgeTest(unittest.TestCase):
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
 
+    def setUp(self):
+        patcher = patch.object(
+            self.bridge,
+            "run_app_server",
+            side_effect=self.bridge.AppServerUnavailable("app-server disabled in tests"),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
@@ -160,6 +169,71 @@ class BridgeTest(unittest.TestCase):
         self.bridge.handle_event(task, {"type": "item.updated", "item": {"id": "rs_1", "type": "reasoning", "summary": [{"type": "summary_text", "text": "частично"}]}})
         self.bridge.handle_event(task, {"type": "item.completed", "item": {"id": "rs_1", "type": "reasoning", "summary": [{"type": "summary_text", "text": "полный текст"}]}})
         self.assertEqual(task.last_reasoning, "полный текст")
+
+    def test_reasoning_deltas_stream_incrementally(self):
+        task = self.bridge.Task("reason-stream")
+        self.bridge.handle_app_notification(task, {
+            "method": "item/reasoning/summaryTextDelta",
+            "params": {"itemId": "rs_1", "summaryIndex": 0, "delta": "Сначала "},
+        })
+        self.assertEqual(task.last_reasoning, "Сначала ")
+        self.bridge.handle_app_notification(task, {
+            "method": "item/reasoning/summaryTextDelta",
+            "params": {"itemId": "rs_1", "summaryIndex": 0, "delta": "проверю"},
+        })
+        self.assertEqual(task.last_reasoning, "Сначала проверю")
+        self.bridge.handle_app_notification(task, {
+            "method": "item/reasoning/summaryTextDelta",
+            "params": {"itemId": "rs_1", "summaryIndex": 1, "delta": "Второй блок"},
+        })
+        self.assertIn("Сначала проверю", task.last_reasoning)
+        self.assertIn("Второй блок", task.last_reasoning)
+
+    def test_app_server_turn_completed_returns_final_answer(self):
+        task = self.bridge.Task("reason-done")
+        outcome = self.bridge.handle_app_notification(task, {
+            "method": "item/agentMessage/delta",
+            "params": {"itemId": "msg_1", "delta": "готово"},
+        })
+        self.assertIsNone(outcome)
+        outcome = self.bridge.handle_app_notification(task, {
+            "method": "turn/completed",
+            "params": {"turn": {
+                "status": "completed",
+                "items": [{"type": "agentMessage", "id": "msg_1", "text": "готово"}],
+            }},
+        })
+        self.assertEqual(outcome, "completed")
+        self.assertEqual(task.last_answer, "готово")
+
+    def test_app_server_marks_failed_turn(self):
+        task = self.bridge.Task("reason-fail")
+        outcome = self.bridge.handle_app_notification(task, {
+            "method": "turn/completed",
+            "params": {"turn": {"status": "failed", "error": {"message": "boom"}, "items": []}},
+        })
+        self.assertEqual(outcome, "failed")
+        self.assertEqual(task.error, "boom")
+
+    def test_app_server_exec_command_counts_for_tool_health(self):
+        task = self.bridge.Task("reason-tool")
+        self.bridge.handle_app_notification(task, {
+            "method": "item/completed",
+            "params": {"item": {
+                "type": "commandExecution", "id": "cmd_1", "status": "completed",
+                "exitCode": 0, "aggregatedOutput": "ok",
+            }},
+        })
+        self.assertEqual(task.tool_successes, 1)
+        self.bridge.handle_app_notification(task, {
+            "method": "item/completed",
+            "params": {"item": {
+                "type": "commandExecution", "id": "cmd_2", "status": "failed",
+                "exitCode": 127, "aggregatedOutput": "command not found",
+            }},
+        })
+        self.assertEqual(task.tool_failures, 1)
+        self.assertIn("command not found", task.last_tool_error)
 
     def test_anymodel_native_id_requires_key(self):
         self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "cc/claude-opus-5-5"})[0], 400)

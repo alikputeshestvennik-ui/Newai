@@ -284,6 +284,10 @@ fun CodexRunBubble(activity: CodexActivity) {
         enter = fadeIn(tween(180)) + expandVertically(tween(180)),
         exit = fadeOut(tween(140)) + shrinkVertically(tween(140)),
     ) {
+        val reasoningScroll = rememberScrollState()
+        LaunchedEffect(activity.reasoning) {
+            if (activity.reasoning.isNotBlank()) reasoningScroll.animateScrollTo(reasoningScroll.maxValue)
+        }
         Column(
             Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(shp(12.dp))
                 .background(Th.c.inBubble.copy(alpha = 0.7f)).padding(horizontal = 12.dp, vertical = 6.dp),
@@ -297,7 +301,7 @@ fun CodexRunBubble(activity: CodexActivity) {
                 Text("Codex обдумывает задачу…", style = body(13, color = Muted), lineHeight = 18.sp)
             } else {
                 Column(
-                    Modifier.fillMaxWidth().heightIn(max = 260.dp).verticalScroll(rememberScrollState()),
+                    Modifier.fillMaxWidth().heightIn(max = 260.dp).verticalScroll(reasoningScroll),
                 ) {
                     Text(activity.reasoning, style = body(13, color = Ink), lineHeight = 18.sp)
                 }

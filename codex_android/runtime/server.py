@@ -6,11 +6,13 @@ environment, but the same file can be used from a normal Linux desktop.
 """
 from __future__ import annotations
 
+import contextlib
 import hmac
 import json
 import mimetypes
 import os
 from pathlib import Path
+import queue
 import re
 import secrets
 import select
@@ -73,6 +75,12 @@ class Task:
         self.files: list[dict] = []
         self.lock = threading.Lock()
 
+    def _refresh_reasoning(self) -> None:
+        self.last_reasoning = "\n\n".join(v for v in self.reasoning_items.values() if v.strip())
+
+    def _refresh_answer(self) -> None:
+        self.last_answer = "\n\n".join(v for v in self.answer_items.values() if v.strip())
+
     def record_reasoning(self, item_id: str, text: str) -> None:
         if not text:
             if item_id and item_id not in self.reasoning_items:
@@ -80,14 +88,43 @@ class Task:
             return
         key = item_id or f"part-{len(self.reasoning_items)}"
         self.reasoning_items[key] = text
-        self.last_reasoning = "\n\n".join(v for v in self.reasoning_items.values() if v.strip())
+        self._refresh_reasoning()
 
     def record_answer(self, item_id: str, text: str) -> None:
         if not text:
             return
         key = item_id or f"part-{len(self.answer_items)}"
         self.answer_items[key] = text
-        self.last_answer = "\n\n".join(v for v in self.answer_items.values() if v.strip())
+        self._refresh_answer()
+
+    def append_reasoning(self, item_id: str, delta: str, part: int = 0) -> None:
+        if not delta:
+            return
+        key = f"{item_id or 'reasoning'}#{part}"
+        self.reasoning_items[key] = self.reasoning_items.get(key, "") + delta
+        self._refresh_reasoning()
+
+    def set_reasoning_parts(self, item_id: str, parts: list[str]) -> None:
+        base = item_id or "reasoning"
+        for key in [k for k in self.reasoning_items if k == base or k.startswith(base + "#")]:
+            del self.reasoning_items[key]
+        text = "\n\n".join(part for part in parts if part.strip())
+        if text:
+            self.reasoning_items[base] = text
+        self._refresh_reasoning()
+
+    def append_answer(self, item_id: str, delta: str) -> None:
+        if not delta:
+            return
+        key = item_id or "answer"
+        self.answer_items[key] = self.answer_items.get(key, "") + delta
+        self._refresh_answer()
+
+    def set_answer(self, item_id: str, text: str) -> None:
+        if not text:
+            return
+        self.answer_items[item_id or "answer"] = text
+        self._refresh_answer()
 
     def snapshot(self) -> dict:
         return {
@@ -346,6 +383,246 @@ def run_process(task: Task, command: list[str], prompt: str, env: dict, output: 
     return subprocess.CompletedProcess(command, process.returncode, answer, stderr)
 
 
+
+class AppServerUnavailable(RuntimeError):
+    """The app-server could not start; the caller may fall back to codex exec."""
+
+
+class AppServerStopped(RuntimeError):
+    """The app-server was killed by the user."""
+
+
+def handle_app_notification(task: Task, message: dict) -> str | None:
+    """Apply one app-server notification.
+
+    Returns ``completed``, ``interrupted`` or ``failed`` when the turn ends.
+    """
+    method = str(message.get("method") or "")
+    params = message.get("params")
+    if not isinstance(params, dict):
+        params = {}
+    if method == "item/reasoning/summaryTextDelta":
+        task.append_reasoning(str(params.get("itemId") or ""),
+                              str(params.get("delta") or ""),
+                              int(params.get("summaryIndex") or 0))
+    elif method == "item/reasoning/textDelta":
+        task.append_reasoning(str(params.get("itemId") or ""), str(params.get("delta") or ""), 99)
+    elif method == "item/agentMessage/delta":
+        task.append_answer(str(params.get("itemId") or ""), str(params.get("delta") or ""))
+    elif method == "item/completed":
+        item = params.get("item")
+        if isinstance(item, dict):
+            kind = str(item.get("type") or "")
+            item_id = str(item.get("id") or "")
+            if kind == "reasoning":
+                parts = item.get("summary")
+                if not isinstance(parts, list) or not parts:
+                    parts = item.get("content")
+                if isinstance(parts, list):
+                    cleaned = [str(part) for part in parts if str(part).strip()]
+                    if cleaned:
+                        task.set_reasoning_parts(item_id, cleaned)
+            elif kind == "agentMessage":
+                task.set_answer(item_id, str(item.get("text") or ""))
+            elif kind == "commandExecution":
+                status = str(item.get("status") or "").lower()
+                code = item.get("exitCode")
+                if status == "completed" and code in (None, 0):
+                    task.tool_successes += 1
+                elif status in ("failed", "declined") or code not in (None, 0):
+                    task.tool_failures += 1
+                    text = str(item.get("aggregatedOutput") or item.get("command") or "").strip()
+                    if text:
+                        task.last_tool_error = text[-2000:]
+    elif method == "error":
+        text = params.get("message") or params.get("error") or message.get("error")
+        if isinstance(text, dict):
+            text = text.get("message") or text.get("code")
+        if text:
+            task.error = str(text)[-2000:]
+    elif method == "turn/completed":
+        turn = params.get("turn")
+        if not isinstance(turn, dict):
+            turn = {}
+        status = str(turn.get("status") or "").lower()
+        items = turn.get("items")
+        if isinstance(items, list):
+            for item in reversed(items):
+                if isinstance(item, dict) and item.get("type") == "agentMessage":
+                    text = str(item.get("text") or "")
+                    if text.strip():
+                        task.last_answer = text[-16000:]
+                    break
+        if status == "completed":
+            return "completed"
+        if status == "interrupted":
+            return "interrupted"
+        error = turn.get("error")
+        if isinstance(error, dict):
+            text = error.get("message") or error.get("code")
+        else:
+            text = error
+        if text:
+            task.error = str(text)[-2000:]
+        return "failed"
+    return None
+
+
+def run_app_server(task: Task, options: list[str], model_id: str, model_provider: str | None,
+                   workspace: Path, prompt: str, env: dict[str, str],
+                   timeout: int) -> subprocess.CompletedProcess:
+    """Drive one Codex turn through ``codex app-server``.
+
+    Unlike ``codex exec --json`` (which only reports a reasoning item once it is
+    finished), the app-server streams ``item/reasoning/summaryTextDelta`` while
+    the model is still thinking.
+    """
+    command = ["codex", "app-server"] + options
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        start_new_session=True,
+        env=env,
+    )
+    task.process = process
+    task.status = "running"
+    stream: "queue.Queue[str | None]" = queue.Queue()
+    stderr_chunks: list[str] = []
+
+    def read_stdout() -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
+            stream.put(line)
+        stream.put(None)
+
+    def read_stderr() -> None:
+        assert process.stderr is not None
+        while True:
+            chunk = process.stderr.read(2048)
+            if not chunk:
+                break
+            stderr_chunks.append(chunk)
+            joined = "".join(stderr_chunks)
+            if len(joined) > MAX_STDERR * 2:
+                stderr_chunks[:] = [joined[-MAX_STDERR:]]
+
+    threading.Thread(target=read_stdout, daemon=True).start()
+    threading.Thread(target=read_stderr, daemon=True).start()
+
+    def stderr_text() -> str:
+        return "".join(stderr_chunks)[-MAX_STDERR:]
+
+    def send(payload: dict) -> None:
+        if process.stdin is None:
+            raise AppServerUnavailable("app-server stdin is closed")
+        try:
+            process.stdin.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            process.stdin.flush()
+        except (BrokenPipeError, OSError) as exc:
+            raise AppServerUnavailable(stderr_text() or str(exc)) from exc
+
+    def receive(deadline: float, fallback: bool) -> dict:
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(command, timeout)
+            try:
+                line = stream.get(timeout=min(0.5, remaining))
+            except queue.Empty:
+                if process.poll() is not None and stream.empty():
+                    if process.returncode == -signal.SIGKILL:
+                        raise AppServerStopped()
+                    if fallback:
+                        raise AppServerUnavailable(stderr_text() or "app-server exited")
+                    raise RuntimeError(stderr_text() or "Соединение с Codex app-server закрылось")
+                continue
+            if line is None:
+                if process.poll() == -signal.SIGKILL:
+                    raise AppServerStopped()
+                if fallback:
+                    raise AppServerUnavailable(stderr_text() or "app-server exited")
+                raise RuntimeError(stderr_text() or "Соединение с Codex app-server закрылось")
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(message, dict):
+                return message
+
+    counter = 0
+
+    def next_id() -> int:
+        nonlocal counter
+        counter += 1
+        return counter
+
+    def request(method: str, params: dict, limit: float, fallback: bool) -> dict:
+        message_id = next_id()
+        send({"jsonrpc": "2.0", "id": message_id, "method": method, "params": params})
+        deadline = time.time() + limit
+        while True:
+            message = receive(deadline, fallback)
+            if message.get("id") == message_id:
+                error = message.get("error")
+                if error:
+                    text = error.get("message") if isinstance(error, dict) else error
+                    raise RuntimeError(str(text or "app-server error"))
+                result = message.get("result")
+                return result if isinstance(result, dict) else {}
+            handle_app_notification(task, message)
+
+    try:
+        request("initialize", {"clientInfo": {"name": "vibecoder", "version": "1.0.0"}}, 30, True)
+        send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
+        params: dict = {
+            "cwd": str(workspace),
+            "approvalPolicy": "never",
+            "sandbox": os.environ.get("TEN_CODEX_SANDBOX", "danger-full-access"),
+            "ephemeral": True,
+        }
+        if model_id:
+            params["model"] = model_id
+        if model_provider:
+            params["modelProvider"] = model_provider
+        started = request("thread/start", params, 120, True)
+        thread = started.get("thread")
+        thread_id = str(thread.get("id") or "") if isinstance(thread, dict) else ""
+        if not thread_id:
+            raise AppServerUnavailable("app-server did not return a thread id")
+        turn_request = next_id()
+        send({"jsonrpc": "2.0", "id": turn_request, "method": "turn/start",
+              "params": {"threadId": thread_id, "input": [{"type": "text", "text": prompt}]}})
+        deadline = time.time() + timeout
+        while True:
+            message = receive(deadline, False)
+            if message.get("id") == turn_request:
+                error = message.get("error")
+                if error:
+                    text = error.get("message") if isinstance(error, dict) else error
+                    raise RuntimeError(str(text or "Не удалось начать задачу"))
+                continue
+            outcome = handle_app_notification(task, message)
+            if outcome == "completed":
+                return subprocess.CompletedProcess(command, 0, task.last_answer[-16000:], stderr_text())
+            if outcome == "interrupted":
+                return subprocess.CompletedProcess(command, -signal.SIGKILL, task.last_answer, stderr_text())
+            if outcome == "failed":
+                return subprocess.CompletedProcess(command, 1, task.last_answer, stderr_text())
+    finally:
+        with contextlib.suppress(ProcessLookupError, OSError):
+            os.killpg(process.pid, signal.SIGKILL)
+        with contextlib.suppress(Exception):
+            process.wait(timeout=5)
+        task.process = None
+        task.returncode = process.returncode
+        task.finished = time.time()
+
+
 class ProxyServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
@@ -457,14 +734,11 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
         output = output_dir / "answer.txt"
         before_files = workspace_snapshot(workspace)
         sandbox = os.environ.get("TEN_CODEX_SANDBOX", "danger-full-access")
-        command = ["codex", "exec", "--skip-git-repo-check", "--sandbox", sandbox,
-                   "-C", str(workspace), "-o", str(output), "--json"]
-        command += codex_runtime_config(os.environ)
+        model_id = ""
         if selected:
             model_id = selected
             if selected.startswith(("chatgpt:", "deepseek:", "any:", "compatible:")):
                 model_id = selected.split(":", 1)[1]
-            command += ["-m", model_id]
         backend = None
         if selected.startswith("chatgpt:"):
             backend = "https://api.openai.com/v1"
@@ -474,8 +748,10 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
             backend = "https://anymodel.org/v1"
         elif selected.startswith("compatible:"):
             backend = base_url
+        runtime_options = codex_runtime_config(os.environ)
+        provider_options: list[str] = []
         if backend:
-            command += [
+            provider_options = [
                 "-c", 'model_provider="ten_provider"',
                 "-c", 'model_providers.ten_provider.name="Vibe provider"',
                 "-c", "model_providers.ten_provider.base_url=" + json.dumps(backend),
@@ -483,8 +759,15 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
                 "-c", 'model_providers.ten_provider.wire_api="responses"',
                 "-c", "model_providers.ten_provider.requires_openai_auth=false",
             ]
+        effort_options: list[str] = []
         if reasoning_effort in {"low", "medium", "high"}:
-            command += ["-c", "model_reasoning_effort=" + json.dumps(reasoning_effort)]
+            effort_options = ["-c", "model_reasoning_effort=" + json.dumps(reasoning_effort)]
+        command = ["codex", "exec", "--skip-git-repo-check", "--sandbox", sandbox,
+                   "-C", str(workspace), "-o", str(output), "--json"]
+        command += runtime_options
+        if model_id:
+            command += ["-m", model_id]
+        command += provider_options + effort_options
         command.append("-")
         env = os.environ.copy()
         if gh_token and isinstance(gh_token, str) and gh_token.strip():
@@ -500,7 +783,22 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
             env["HTTP_PROXY"] = proxy
             env["ALL_PROXY"] = proxy
             env["NO_PROXY"] = "127.0.0.1,localhost"
-        result = run_process(task, command, goal, env, output, 1200)
+        try:
+            result = run_app_server(
+                task,
+                runtime_options + provider_options + effort_options
+                + ["-c", 'model_reasoning_summary="detailed"'],
+                model_id,
+                "ten_provider" if backend else None,
+                workspace,
+                goal,
+                env,
+                1200,
+            )
+        except AppServerStopped:
+            return 409, {"error": "Задача остановлена", "task_id": task.id}
+        except AppServerUnavailable:
+            result = run_process(task, command, goal, env, output, 1200)
         diagnostic = result.stderr or ""
         if "error building bubblewrap command" in diagnostic or "cannot establish app-server socket mount isolation" in diagnostic:
             message = "Локальная песочница Codex несовместима с окружением телефона. Выполнение команд не подтверждено."
