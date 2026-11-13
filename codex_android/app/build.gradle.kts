@@ -25,6 +25,8 @@ android {
         }
     }
     buildTypes { release { if (keystore != null) signingConfig = signingConfigs.getByName("release") } }
+    // Direct-install app: target 28 is required to execute the embedded runtime.
+    lint { disable += "ExpiredTargetSdkVersion" }
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
