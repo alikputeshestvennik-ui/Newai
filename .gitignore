@@ -1,0 +1,8 @@
+**/.gradle/
+**/build/
+**/local.properties
+**/__pycache__/
+**/*.keystore
+**/*.jks
+codex_android/app/src/main/assets/bootstrap-aarch64.zip
+codex_android/app/src/main/assets/runtime/
