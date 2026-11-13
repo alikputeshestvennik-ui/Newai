@@ -28,45 +28,17 @@ class Pal(
 
 object Th {
     val all = listOf(
-        Pal("cockpit", "Кабина", true,
-            bg = Color(0xFF0B1422), card = Color(0xFF13233A), line = Color(0xFF243A55), ink = Color(0xFFEAF2FB), muted = Color(0xFF9DB2C8),
-            accent = Color(0xFF6CC6EE), onAccent = Color(0xFF06121F), violet = Color(0xFF8B9CFF), amber = Color(0xFFF2C58A), danger = Color(0xFFFF9A8F),
-            inBubble = Color(0xF0142740), outBubble = Color(0xFF2A5079), outInk = Color(0xFFF2F8FF), outMeta = Color(0xFFB7CDE6), meta = Color(0xFF8DA3BA)),
-        Pal("mint", "Мята", false,
-            bg = Color(0xFFF3F6F5), card = Color(0xFFFFFFFF), line = Color(0xFFDCE3E0), ink = Color(0xFF14201C), muted = Color(0xFF5F6E69),
-            accent = Color(0xFF0E8C77), onAccent = Color.White, violet = Color(0xFF6D5BD0), amber = Color(0xFFB45309), danger = Color(0xFFC62828),
-            inBubble = Color.White, outBubble = Color(0xFFD3F5C6), outInk = Color(0xFF14201C), outMeta = Color(0xFF3F7A55), meta = Color(0xFF6B7A75)),
-        Pal("sand", "Песок", false,
-            bg = Color(0xFFF7F3EC), card = Color(0xFFFFFFFF), line = Color(0xFFE6DDCF), ink = Color(0xFF2A2118), muted = Color(0xFF75685A),
-            accent = Color(0xFFC46A1E), onAccent = Color.White, violet = Color(0xFF7A5BC8), amber = Color(0xFFB45309), danger = Color(0xFFC62828),
-            inBubble = Color.White, outBubble = Color(0xFFFFE2B8), outInk = Color(0xFF2A2118), outMeta = Color(0xFF8A6A3C), meta = Color(0xFF7D7064)),
         Pal("sky", "Небо", false,
             bg = Color(0xFFF2F5F9), card = Color(0xFFFFFFFF), line = Color(0xFFDCE3EC), ink = Color(0xFF131C28), muted = Color(0xFF5B6878),
             accent = Color(0xFF2F6FD6), onAccent = Color.White, violet = Color(0xFF6D5BD0), amber = Color(0xFFB45309), danger = Color(0xFFC62828),
             inBubble = Color.White, outBubble = Color(0xFFCFE3FF), outInk = Color(0xFF131C28), outMeta = Color(0xFF41618E), meta = Color(0xFF677486)),
-        Pal("dawn", "Рассвет", false,
-            bg = Color(0xFFF3EFE6), card = Color(0xFFFFFFFF), line = Color(0xFFE2DACB), ink = Color(0xFF1D2430), muted = Color(0xFF5D6672),
-            accent = Color(0xFF1F5FD1), onAccent = Color.White, violet = Color(0xFF5A49C2), amber = Color(0xFFA3560F), danger = Color(0xFFC62828),
-            inBubble = Color.White, outBubble = Color(0xFFDCE7FA), outInk = Color(0xFF1D2430), outMeta = Color(0xFF41618E), meta = Color(0xFF6A727D)),
-        Pal("night", "Ночь", true,
-            bg = Color(0xFF0E1116), card = Color(0xFF151A21), line = Color(0xFF262C36), ink = Color(0xFFE8EAED), muted = Color(0xFF9AA3AE),
-            accent = Color(0xFF3DD9C1), onAccent = Color(0xFF0E1116), violet = Color(0xFF8B7CFF), amber = Color(0xFFF5B83D), danger = Color(0xFFFF8A80),
-            inBubble = Color(0xFF1A2028), outBubble = Color(0xFF1F6F65), outInk = Color(0xFFF2FFFC), outMeta = Color(0xFFBFEDE5), meta = Color(0xFF8A939E)),
-        Pal("mono", "Монохром", false,
-            bg = Color(0xFFF6F6F4), card = Color(0xFFFFFFFF), line = Color(0xFFD6D6D2), ink = Color(0xFF111111), muted = Color(0xFF5E5E5E),
-            accent = Color(0xFF111111), onAccent = Color.White, violet = Color(0xFF3E3E3E), amber = Color(0xFF3E3E3E), danger = Color(0xFF111111),
-            inBubble = Color.White, outBubble = Color(0xFFE4E4E0), outInk = Color(0xFF111111), outMeta = Color(0xFF5E5E5E), meta = Color(0xFF6B6B6B), square = true),
-        Pal("mono_night", "Монохром ночь", true,
-            bg = Color(0xFF0E0E0E), card = Color(0xFF171717), line = Color(0xFF2E2E2E), ink = Color(0xFFF2F2F0), muted = Color(0xFFA3A39F),
-            accent = Color(0xFFF2F2F0), onAccent = Color(0xFF111111), violet = Color(0xFFC8C8C4), amber = Color(0xFFC8C8C4), danger = Color(0xFFF2F2F0),
-            inBubble = Color(0xFF171717), outBubble = Color(0xFF2A2A2A), outInk = Color(0xFFF2F2F0), outMeta = Color(0xFFA3A39F), meta = Color(0xFF8E8E8A), square = true),
     )
 
     private var base by mutableStateOf(all.first { it.id == "sky" })
     val c: Pal get() = base
 
     fun load() {
-        base = all.firstOrNull { it.id == Prefs.theme } ?: all.first { it.id == "sky" }
+        base = all.first()
     }
 
     fun set(id: String) {

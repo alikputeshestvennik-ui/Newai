@@ -9,7 +9,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -125,23 +124,6 @@ fun CodexSettingsScreen(back: () -> Unit) {
                     }, bg = Card, fg = Ink, border = Line, modifier = Modifier.weight(1f))
                 }
                 if (ghStatus.isNotBlank()) Text(ghStatus, style = body(12, color = Muted))
-            }
-
-            CardBox {
-                Text("Оформление", style = body(16, FontWeight.SemiBold))
-                Text("Та же палитра, что в Codex-режиме «Тени».", style = body(12, color = Muted))
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Th.all.forEach { pal ->
-                        val selected = pal.id == Th.c.id
-                        Row(Modifier.clip(shp(12.dp)).background(if (selected) AccentSoft else Card)
-                            .border(1.dp, if (selected) Teal else Line, shp(12.dp)).clickable { Th.set(pal.id) }
-                            .padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(18.dp).clip(circ).background(pal.accent))
-                            Spacer(Modifier.width(6.dp))
-                            Text(pal.title, style = body(12, FontWeight.SemiBold, if (selected) Teal else Ink))
-                        }
-                    }
-                }
             }
 
             Text("Вайбкодер работает на телефоне: Python, Git, GitHub CLI, ripgrep, архивы и файлы доступны без Termux.",
