@@ -90,11 +90,11 @@ internal object ChatGptAccount {
                 .appendQueryParameter("resource", "https://api.openai.com/v1")
                 .appendQueryParameter("state", state).appendQueryParameter("nonce", nonce)
                 .appendQueryParameter("code_challenge_method", "S256").appendQueryParameter("code_challenge", ChatGptIdentity.challenge(verifier))
-            if (client.isBlank()) uri.appendQueryParameter("agent_name_hint", "NewAI")
+            if (client.isBlank()) uri.appendQueryParameter("agent_name_hint", "Vibecoder")
             else if (value("id").isNotBlank()) uri.appendQueryParameter("id_token_hint", value("id"))
             if (connected && !allowed) uri.appendQueryParameter("prompt", "consent")
             withContext(Dispatchers.Main) { ctx.startActivity(Intent(Intent.ACTION_VIEW, uri.build()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            status = "Заверши вход в браузере и вернись в NewAI"
+            status = "Заверши вход в браузере и вернись в Вайбкодер"
             val deadline = System.currentTimeMillis() + 300_000
             var callback: Uri? = null
             while (callback == null && System.currentTimeMillis() < deadline) {
@@ -105,7 +105,7 @@ internal object ChatGptAccount {
                     val path = first.split(' ').getOrNull(1).orEmpty()
                     val candidate = Uri.parse("http://127.0.0.1$path")
                     val valid = first.startsWith("GET ") && candidate.path == "/auth/callback" && candidate.getQueryParameter("state") == state
-                    val text = if (valid) "Sign-in received. Return to NewAI." else "Invalid callback."
+                    val text = if (valid) "Sign-in received. Return to Vibecoder." else "Invalid callback."
                     socket.getOutputStream().write(("HTTP/1.1 ${if (valid) "200 OK" else "400 Bad Request"}\r\nContent-Type: text/plain\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: ${text.length}\r\n\r\n$text").toByteArray())
                     if (valid) callback = candidate
                 }
@@ -142,6 +142,6 @@ internal object ChatGptAccount {
         } finally {
             prefs.edit().remove("access").remove("refresh").remove("id").remove("scope").remove("models").remove("expiry").commit()
         }
-        return if (revoked) "Отключено" else "Вышли на телефоне. Отзыв сессии не подтверждён — отключи NewAI в настройках ChatGPT."
+        return if (revoked) "Отключено" else "Вышли на телефоне. Отзыв сессии не подтверждён — отключи Vibecoder в настройках ChatGPT."
     }
 }

@@ -3,6 +3,11 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+/** Секреты GitHub Actions попадают в BuildConfig, в исходниках их нет. */
+fun secret(name: String): String =
+    "\"" + (System.getenv(name) ?: "").trim().replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 android {
     namespace = "ru.alim.newai"
     compileSdk = 34
@@ -12,7 +17,10 @@ android {
         // Required to execute the private embedded runtime on Android 10+.
         targetSdk = 28
         versionCode = 1 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
-        versionName = "0.1"
+        versionName = "1.0"
+        buildConfigField("String", "GH_TOKEN", secret("GH_TOKEN"))
+        buildConfigField("String", "DEEPSEEK_API", secret("DEEPSEEK_API"))
+        buildConfigField("String", "ANYMODEL_KEY", secret("ANYMODEL_KEY"))
         ndk { abiFilters += "arm64-v8a" }
     }
     val keystore = System.getenv("ANDROID_KEYSTORE_PATH")
@@ -27,7 +35,7 @@ android {
     buildTypes { release { if (keystore != null) signingConfig = signingConfigs.getByName("release") } }
     // Direct-install app: target 28 is required to execute the embedded runtime.
     lint { disable += "ExpiredTargetSdkVersion" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -460,7 +460,7 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
         if backend:
             command += [
                 "-c", 'model_provider="ten_provider"',
-                "-c", 'model_providers.ten_provider.name="Ten provider"',
+                "-c", 'model_providers.ten_provider.name="Vibe provider"',
                 "-c", "model_providers.ten_provider.base_url=" + json.dumps(backend),
                 "-c", 'model_providers.ten_provider.env_key="TEN_PROVIDER_TOKEN"',
                 "-c", 'model_providers.ten_provider.wire_api="responses"',
@@ -650,5 +650,5 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     start_proxy()
-    print("NewAI: локальный исполнитель на 127.0.0.1:18766", flush=True)
+    print("Вайбкодер: локальный исполнитель на 127.0.0.1:18766", flush=True)
     ThreadingHTTPServer(("127.0.0.1", 18766), Handler).serve_forever()

@@ -1,4 +1,4 @@
-name: Build NewAI APK
+name: Build Vibecoder APK
 on:
   workflow_dispatch:
   push:
@@ -16,6 +16,14 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Fonts (Manrope, Unbounded)
+        shell: bash
+        run: |
+          mkdir -p codex_android/app/src/main/assets/fonts
+          curl -fsSL --connect-timeout 10 --max-time 20 --retry 1 -o codex_android/app/src/main/assets/fonts/manrope.ttf \
+            "https://github.com/google/fonts/raw/main/ofl/manrope/Manrope%5Bwght%5D.ttf" || rm -f codex_android/app/src/main/assets/fonts/manrope.ttf
+          curl -fsSL --connect-timeout 10 --max-time 20 --retry 1 -o codex_android/app/src/main/assets/fonts/unbounded.ttf \
+            "https://github.com/google/fonts/raw/main/ofl/unbounded/Unbounded%5Bwght%5D.ttf" || rm -f codex_android/app/src/main/assets/fonts/unbounded.ttf
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -65,6 +73,9 @@ jobs:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/newai.keystore
           ANDROID_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          DEEPSEEK_API: ${{ secrets.DEEPSEEK_API }}
+          ANYMODEL_KEY: ${{ secrets.ANYMODEL_KEY }}
         run: |
           set -euo pipefail
           test -n "$ANDROID_STORE_PASSWORD"
@@ -76,11 +87,11 @@ jobs:
           set -euo pipefail
           signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
           "$signer" verify --verbose codex_android/app/build/outputs/apk/release/app-release.apk
-          cp codex_android/app/build/outputs/apk/release/app-release.apk NewAI.apk
+          cp codex_android/app/build/outputs/apk/release/app-release.apk Vibecoder.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: NewAI-signed-apk
-          path: NewAI.apk
+          name: Vibecoder-signed-apk
+          path: Vibecoder.apk
           if-no-files-found: error
       - name: Remove signing key
         if: always()

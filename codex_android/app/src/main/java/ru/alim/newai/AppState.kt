@@ -2,9 +2,18 @@ package ru.alim.newai
 
 import android.content.Context
 import android.net.Uri
-import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 object Docs { data class FileRef(val name: String, val uri: Uri, val mime: String) }
 
@@ -14,10 +23,11 @@ object ModelRouting {
     fun isAny(model: String) = model.startsWith("any:") || Regex("^(cx|cc|ds|ag|kmc)/", RegexOption.IGNORE_CASE).containsMatchIn(model)
     fun codexModel(model: String): String {
         val value = model.trim()
-        require(Regex("[a-zA-Z0-9._/:-]{1,160}").matches(value) &&
-            (isChatGpt(value) || isDeepSeek(value) || isAny(value) || value.startsWith("compatible:")) && !value.endsWith(':')) {
-            "Выбери провайдера и укажи модель в настройках"
+        require(value.isNotEmpty() && Regex("[^\\s]{1,200}").matches(value) &&
+            (isChatGpt(value) || isDeepSeek(value) || isAny(value) || value.startsWith("compatible:"))) {
+            "Выбери провайдера и модель в настройках"
         }
+        require(!value.endsWith(':')) { "Выбери конкретную модель" }
         return value
     }
 }
@@ -25,58 +35,179 @@ object ModelRouting {
 object Prefs {
     private lateinit var storage: android.content.SharedPreferences
     fun init(ctx: Context) { storage = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE) }
-    var compatibleModel: String
-        get() = storage.getString("compatibleModel", "").orEmpty()
-        set(v) { storage.edit().putString("compatibleModel", v).apply() }
-    var model: String
-        get() = storage.getString("model", "").orEmpty()
-        set(v) { storage.edit().putString("model", v).apply() }
+    var theme: String
+        get() = storage.getString("theme", "sky").orEmpty()
+        set(v) { storage.edit().putString("theme", v).apply() }
+    var followUp: String
+        get() = storage.getString("follow_up", "queue").orEmpty()
+        set(v) { storage.edit().putString("follow_up", v).apply() }
+    var lastSession: String
+        get() = storage.getString("last_session", "").orEmpty()
+        set(v) { storage.edit().putString("last_session", v).apply() }
+    var floatingOverlay: Boolean
+        get() = storage.getBoolean("floating_overlay", false)
+        set(v) { storage.edit().putBoolean("floating_overlay", v).apply() }
+    var overlayTask: String
+        get() = storage.getString("overlay_task", "").orEmpty()
+        set(v) { storage.edit().putString("overlay_task", v).apply() }
+    var overlaySession: String
+        get() = storage.getString("overlay_session", "").orEmpty()
+        set(v) { storage.edit().putString("overlay_session", v).apply() }
 }
 
-data class Message(val role: String, val text: String, val files: List<Docs.FileRef> = emptyList())
-object Conversation {
-    val messages = mutableStateListOf<Message>()
+/** Навигация и действия, доступные из Compose и из фонового сервиса. */
+object AppNav {
+    lateinit var ctx: Context
+    @Volatile var foreground = true
+    var settingsOpen by mutableStateOf(false)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    fun init(ctx: Context) { this.ctx = ctx.applicationContext }
+    fun stop(session: CodexSession) {
+        session.pending = ""
+        scope.launch { runCatching { CodexGateway.cancel(ctx, session.taskId) } }
+    }
+}
+
+data class Message(
+    val id: String = UUID.randomUUID().toString(),
+    val role: String,
+    val text: String,
+    val files: List<Docs.FileRef> = emptyList(),
+    val ts: Long = System.currentTimeMillis(),
+) {
+    val mine: Boolean get() = role == "me"
+    val system: Boolean get() = role == "system"
+}
+
+class CodexSession(
+    val id: String,
+    name: String,
+    taskId: String,
+    val created: Long = System.currentTimeMillis(),
+) {
+    var name by mutableStateOf(name)
+    var taskId by mutableStateOf(taskId)
+    val messages: SnapshotStateList<Message> = mutableStateListOf()
+    var draft by mutableStateOf("")
+    var providerId by mutableStateOf("")
+    var model by mutableStateOf("")
     var busy by mutableStateOf(false)
     var progress by mutableStateOf("")
-    var draft by mutableStateOf("")
-    var taskId = "chat_" + java.util.UUID.randomUUID().toString().replace("-", "")
-    private var loaded = false
+    var pending by mutableStateOf("")
+}
+
+/** Несколько независимых диалогов; у каждого свой провайдер, модель и локальная задача. */
+object Sessions {
+    val list = mutableStateListOf<CodexSession>()
+    var currentId by mutableStateOf("")
     private lateinit var storage: android.content.SharedPreferences
+    private var loaded = false
+
+    val current: CodexSession
+        get() = list.firstOrNull { it.id == currentId } ?: list.first()
+
     fun init(ctx: Context) {
         if (loaded) return
-        storage = ctx.getSharedPreferences("conversation", Context.MODE_PRIVATE)
-        taskId = storage.getString("task_id", taskId).orEmpty()
-        draft = storage.getString("draft", "").orEmpty()
+        storage = ctx.getSharedPreferences("sessions", Context.MODE_PRIVATE)
         runCatching {
-            val list = JSONArray(storage.getString("messages", "[]"))
-            for (i in 0 until list.length()) {
-                val item = list.getJSONObject(i)
-                val files = item.optJSONArray("files") ?: JSONArray()
-                messages += Message(item.getString("role"), item.getString("text"), (0 until files.length()).map { n ->
-                    val file = files.getJSONObject(n)
-                    Docs.FileRef(file.getString("name"), Uri.parse(file.getString("uri")), file.getString("mime"))
-                })
+            val array = JSONArray(storage.getString("items", "[]"))
+            for (i in 0 until array.length()) {
+                val item = array.getJSONObject(i)
+                val session = CodexSession(
+                    id = item.getString("id"),
+                    name = item.optString("name", "Вайбкодер"),
+                    taskId = item.optString("task_id", newTaskId()),
+                    created = item.optLong("created", System.currentTimeMillis()),
+                )
+                session.draft = item.optString("draft", "")
+                session.providerId = item.optString("provider", "")
+                session.model = item.optString("model", "")
+                val messages = item.optJSONArray("messages") ?: JSONArray()
+                for (n in 0 until messages.length()) {
+                    val m = messages.getJSONObject(n)
+                    val files = m.optJSONArray("files") ?: JSONArray()
+                    session.messages += Message(
+                        id = m.optString("id", UUID.randomUUID().toString()),
+                        role = m.optString("role", "codex"),
+                        text = m.optString("text", ""),
+                        files = (0 until files.length()).map { k ->
+                            val f = files.getJSONObject(k)
+                            Docs.FileRef(f.optString("name"), Uri.parse(f.optString("uri")), f.optString("mime", "application/octet-stream"))
+                        },
+                        ts = m.optLong("ts", System.currentTimeMillis()),
+                    )
+                }
+                list += session
             }
         }
+        if (list.isEmpty()) new(save = false)
+        currentId = Prefs.lastSession.takeIf { id -> list.any { it.id == id } } ?: list.first().id
         loaded = true
-    }
-    fun save() {
-        val list = JSONArray()
-        messages.forEach { m ->
-            val files = JSONArray()
-            m.files.forEach { files.put(JSONObject().put("name", it.name).put("uri", it.uri.toString()).put("mime", it.mime)) }
-            list.put(JSONObject().put("role", m.role).put("text", m.text).put("files", files))
-        }
-        storage.edit().putString("task_id", taskId).putString("messages", list.toString()).putString("draft", draft).apply()
-    }
-    fun newChat() {
-        if (busy) return
-        messages.clear(); draft = ""; progress = ""
-        taskId = "chat_" + java.util.UUID.randomUUID().toString().replace("-", "")
         save()
     }
-    fun prompt(text: String): String {
-        val history = messages.takeLast(12).joinToString("\n\n") { "${it.role}: ${it.text.takeLast(1500)}" }.takeLast(10000)
+
+    fun find(id: String): CodexSession? = list.firstOrNull { it.id == id }
+    fun sessionForTask(taskId: String): CodexSession? = list.firstOrNull { it.taskId == taskId }
+
+    fun open(id: String) {
+        if (list.none { it.id == id }) return
+        currentId = id
+        Prefs.lastSession = id
+    }
+
+    fun new(save: Boolean = true): CodexSession {
+        val n = list.size + 1
+        val session = CodexSession(
+            id = "chat-" + UUID.randomUUID().toString().replace("-", "").take(12),
+            name = if (n <= 1) "Вайбкодер" else "Вайбкодер $n",
+            taskId = newTaskId(),
+        )
+        list += session
+        currentId = session.id
+        Prefs.lastSession = session.id
+        if (save) this.save()
+        return session
+    }
+
+    fun remove(id: String) {
+        val session = find(id) ?: return
+        if (list.size <= 1) {
+            session.messages.clear()
+            session.draft = ""
+            session.progress = ""
+            session.taskId = newTaskId()
+            save()
+            return
+        }
+        list.remove(session)
+        if (currentId == id) open(list.first().id)
+        save()
+    }
+
+    fun save() {
+        if (!::storage.isInitialized) return
+        val array = JSONArray()
+        list.forEach { session ->
+            val messages = JSONArray()
+            session.messages.forEach { m ->
+                val files = JSONArray()
+                m.files.forEach { f ->
+                    files.put(JSONObject().put("name", f.name).put("uri", f.uri.toString()).put("mime", f.mime))
+                }
+                messages.put(JSONObject().put("id", m.id).put("role", m.role).put("text", m.text)
+                    .put("ts", m.ts).put("files", files))
+            }
+            array.put(JSONObject().put("id", session.id).put("name", session.name).put("task_id", session.taskId)
+                .put("created", session.created).put("draft", session.draft).put("provider", session.providerId)
+                .put("model", session.model).put("messages", messages))
+        }
+        storage.edit().putString("items", array.toString()).apply()
+    }
+
+    fun prompt(session: CodexSession, text: String): String {
+        val history = session.messages.takeLast(12).joinToString("\n\n") { "${it.role}: ${it.text.takeLast(1500)}" }.takeLast(10000)
         return "Текущая задача:\n$text\n\nКонтекст переписки:\n$history"
     }
+
+    private fun newTaskId() = "vibe_" + UUID.randomUUID().toString().replace("-", "")
 }

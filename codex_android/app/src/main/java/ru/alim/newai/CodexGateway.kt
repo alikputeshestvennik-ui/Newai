@@ -34,28 +34,25 @@ object CodexGateway {
     }
     /** ASR always uses DeepSeek credentials, regardless of the selected chat provider. */
     fun deepSeekAsrKey(ctx: Context): String = store(ctx).getString("provider_deepseek", "").orEmpty()
-        .trim()
+        .trim().ifBlank { BuildConfig.DEEPSEEK_API.trim() }
 
     fun saveGithubToken(ctx: Context, token: String) { store(ctx).edit().putString("github_token", token.trim()).apply() }
+    fun githubTokenConfigured(ctx: Context): Boolean = BuildConfig.GH_TOKEN.isNotBlank() ||
+        store(ctx).getString("github_token", "").orEmpty().isNotBlank()
 
-    fun customUrl(ctx: Context): String = store(ctx).getString("custom_url", "").orEmpty()
-    fun saveCustom(ctx: Context, address: String, token: String, model: String) {
-        val parsed = address.trim().toHttpUrlOrNull() ?: error("Укажите HTTPS-адрес провайдера")
-        require(parsed.isHttps && parsed.query == null && parsed.fragment == null) { "Нужен HTTPS-адрес без параметров" }
-        require(Regex("^[a-zA-Z0-9._/:-]{1,128}$").matches(model.trim())) { "Укажите корректный идентификатор модели" }
-        val edit=store(ctx).edit().putString("custom_url", parsed.toString().trimEnd('/'))
-        if (token.isNotBlank()) edit.putString("custom_token", token.trim())
-        edit.apply(); Prefs.compatibleModel = model.trim()
-    }
     fun saveLocalToken(ctx: Context, token: String) {
         require(token.trim().length >= 32) { "Неверный ключ локального окружения" }
         store(ctx).edit().putString("local_token", token.trim()).apply()
     }
     fun saveProviderToken(ctx: Context, provider: String, token: String) {
-        require(provider == "deepseek" || provider == "any")
+        require(provider.isNotBlank())
         require(token.isNotBlank()) { "Введите ключ" }
         store(ctx).edit().putString("provider_" + provider, token.trim()).apply()
     }
+    fun providerToken(ctx: Context, provider: String): String = store(ctx).getString("provider_" + provider, "").orEmpty()
+
+    /** Всё, что нужно локальному Codex для одного выбранного провайдера. */
+    data class RunProvider(val kind: String, val baseUrl: String, val key: String)
     private fun token(ctx: Context): String {
         val automatic = EmbeddedRuntime.tokenOrEmpty(ctx)
         if (automatic.isNotBlank()) return automatic
@@ -138,36 +135,34 @@ object CodexGateway {
         throw lastError ?: java.io.IOException("Не удалось запустить локальный Codex")
     }
 
-    fun run(ctx: Context, goal: String, selected: String, taskId: String = "default"): Result {
+    fun run(ctx: Context, goal: String, selected: String, taskId: String = "default", runProvider: RunProvider? = null): Result {
         require(goal.length <= 16000) { "Задача слишком длинная" }
         val routed = ModelRouting.codexModel(selected)
         EmbeddedRuntime.startAsync(ctx)
         val token = token(ctx)
         require(token.isNotBlank()) { "Локальное окружение ещё готовится" }
         EmbeddedRuntime.awaitServer(ctx)
-        val provider = when {
-            ModelRouting.isDeepSeek(routed) -> "deepseek"
-            ModelRouting.isAny(routed) -> "any"
-            routed.startsWith("compatible:") -> "compatible"
-            routed.startsWith("chatgpt:") || ModelRouting.isChatGpt(routed) -> "chatgpt"
+        val kind = runProvider?.kind ?: when {
+            ModelRouting.isDeepSeek(routed) -> Providers.DEEPSEEK
+            ModelRouting.isAny(routed) -> Providers.ANY
+            routed.startsWith("compatible:") -> Providers.CUSTOM
+            routed.startsWith("chatgpt:") || ModelRouting.isChatGpt(routed) -> Providers.CHATGPT
             else -> ""
         }
-        val providerToken = if (provider == "chatgpt") {
+        val providerToken = if (kind == Providers.CHATGPT) {
             ChatGptAccount.access()
         } else {
-            store(ctx).getString("provider_" + provider, "").orEmpty().ifBlank {
-                when (provider) {
-                    "deepseek" -> ""
-                    "any" -> ""
-                    "compatible" -> store(ctx).getString("custom_token", "").orEmpty()
-                    else -> ""
-                }
-            }
+            runProvider?.key?.trim().orEmpty()
         }
+        require(kind == Providers.CHATGPT || providerToken.isNotBlank()) { "Сначала сохрани API-ключ выбранного провайдера" }
         val body = JSONObject().put("goal", goal).put("selected", routed)
             .put("provider_token", providerToken).put("task_id", taskId)
-        if (provider == "compatible") body.put("base_url", customUrl(ctx))
-        val ghToken = store(ctx).getString("github_token", "").orEmpty()
+        if (kind == Providers.CUSTOM) {
+            val base = runProvider?.baseUrl?.trim().orEmpty()
+            require(base.startsWith("https://")) { "Сначала укажи HTTPS-адрес провайдера" }
+            body.put("base_url", base)
+        }
+        val ghToken = store(ctx).getString("github_token", "").orEmpty().trim().ifBlank { BuildConfig.GH_TOKEN.trim() }
         if (ghToken.isNotBlank()) body.put("gh_token", ghToken)
 
         val started = begin(ctx, token, body, taskId)
