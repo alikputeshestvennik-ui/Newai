@@ -14,6 +14,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -113,28 +114,49 @@ private const val ARTIFACT_FIT_SCRIPT = """
     'img,video,canvas{max-width:100%!important;height:auto!important}';
   head.appendChild(style);
 
-  function fit() {
+  function fitWidth() {
     var body = document.body;
     if (!body) return;
 
     body.style.transform = '';
-    body.style.transformOrigin = 'top center';
+    body.style.width = '';
+    body.style.transformOrigin = 'top left';
 
     var viewportWidth = Math.max(1, window.innerWidth || root.clientWidth || 1);
-    var viewportHeight = Math.max(1, window.innerHeight || root.clientHeight || 1);
     var width = Math.max(root.scrollWidth || 0, body.scrollWidth || 0, viewportWidth);
-    var height = Math.max(root.scrollHeight || 0, body.scrollHeight || 0, viewportHeight);
-    var scale = Math.min(1, viewportWidth / width, viewportHeight / height);
+    if (width <= viewportWidth + 1) return;
 
-    if (scale < 0.999) body.style.transform = 'scale(' + scale + ')';
+    var scale = viewportWidth / width;
+    body.style.transform = 'scale(' + scale + ')';
+    body.style.width = (100 / scale) + '%';
   }
 
-  fit();
-  setTimeout(fit, 80);
-  setTimeout(fit, 400);
-  window.addEventListener('resize', fit);
+  fitWidth();
+  setTimeout(fitWidth, 80);
+  setTimeout(fitWidth, 400);
+  window.addEventListener('resize', fitWidth);
 })();
 """
+
+/** Берёт пропорции SVG из viewBox, чтобы превью не оставляло полос по краям. */
+private fun artifactAspectRatio(file: Docs.FileRef): Float {
+    if (!file.name.endsWith(".svg", true)) return 4f / 3f
+    val head = runCatching {
+        java.io.File(file.path).bufferedReader().use { reader ->
+            val buffer = CharArray(16 * 1024)
+            val read = reader.read(buffer)
+            if (read > 0) String(buffer, 0, read) else ""
+        }
+    }.getOrDefault("")
+    val viewBox = Regex(
+        """viewBox\s*=\s*["']\s*[-\d.]+[,\s]+[-\d.]+[,\s]+([\d.]+)[,\s]+([\d.]+)""",
+        RegexOption.IGNORE_CASE,
+    ).find(head) ?: return 4f / 3f
+    val width = viewBox.groupValues[1].toFloatOrNull() ?: return 4f / 3f
+    val height = viewBox.groupValues[2].toFloatOrNull() ?: return 4f / 3f
+    if (width <= 0f || height <= 0f) return 4f / 3f
+    return (width / height).coerceIn(0.6f, 3.2f)
+}
 
 @Composable
 fun CodexScreen(onSettings: () -> Unit) {
@@ -360,6 +382,7 @@ private fun openFile(ctx: android.content.Context, file: Docs.FileRef) {
 @Composable
 private fun WebArtifact(file: Docs.FileRef) {
     val ctx = LocalContext.current
+    val aspectRatio = remember(file.path) { artifactAspectRatio(file) }
     Column(Modifier.fillMaxWidth().clip(shp(12.dp)).background(Card.copy(alpha = 0.8f))
         .border(1.dp, Line, shp(12.dp))) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -371,26 +394,29 @@ private fun WebArtifact(file: Docs.FileRef) {
             Text("Открыть", style = body(12, FontWeight.SemiBold, Teal), modifier = Modifier.clickable { openFile(ctx, file) }.padding(6.dp))
         }
         androidx.compose.runtime.key(file.path) {
-            AndroidView(
-                factory = { WebView(it).apply {
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.allowFileAccess = true
-                    settings.setSupportZoom(false)
-                    settings.builtInZoomControls = false
-                    settings.displayZoomControls = false
-                    webViewClient = object : WebViewClient() {
-                        override fun onPageFinished(view: WebView, url: String?) {
-                            super.onPageFinished(view, url)
-                            view.evaluateJavascript(ARTIFACT_FIT_SCRIPT, null)
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val previewHeight = (maxWidth / aspectRatio).coerceIn(160.dp, 420.dp)
+                AndroidView(
+                    factory = { WebView(it).apply {
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.allowFileAccess = true
+                        settings.setSupportZoom(false)
+                        settings.builtInZoomControls = false
+                        settings.displayZoomControls = false
+                        webViewClient = object : WebViewClient() {
+                            override fun onPageFinished(view: WebView, url: String?) {
+                                super.onPageFinished(view, url)
+                                view.evaluateJavascript(ARTIFACT_FIT_SCRIPT, null)
+                            }
                         }
-                    }
-                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    loadUrl(android.net.Uri.fromFile(java.io.File(file.path)).toString())
-                } },
-                update = { },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp),
-            )
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        loadUrl(android.net.Uri.fromFile(java.io.File(file.path)).toString())
+                    } },
+                    update = { },
+                    modifier = Modifier.fillMaxWidth().height(previewHeight),
+                )
+            }
         }
     }
 }
