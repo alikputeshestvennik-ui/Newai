@@ -487,6 +487,7 @@ private fun ArtifactWebView(file: Docs.FileRef, modifier: Modifier) {
             val startUrl = artifactUrl(File(file.path), root)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            if (android.os.Build.VERSION.SDK_INT >= 33) runCatching { settings.setAlgorithmicDarkeningAllowed(false) }
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             settings.useWideViewPort = true
@@ -511,6 +512,11 @@ private fun ArtifactWebView(file: Docs.FileRef, modifier: Modifier) {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val url = request.url
                     if (url.host.equals(ARTIFACT_HOST, true)) return false
+                    val local = loopbackArtifactUrl(url, root)
+                    if (local != null) {
+                        view.loadUrl(local)
+                        return true
+                    }
                     runCatching {
                         view.context.startActivity(Intent(Intent.ACTION_VIEW, url)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -526,7 +532,7 @@ private fun ArtifactWebView(file: Docs.FileRef, modifier: Modifier) {
                     }
                 }
             }
-            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            setBackgroundColor(android.graphics.Color.WHITE)
             loadUrl(startUrl)
         } },
         update = { },
@@ -554,6 +560,15 @@ private fun artifactUrl(file: File, root: File): String {
     return "$ARTIFACT_ORIGIN/$encoded"
 }
 
+private fun loopbackArtifactUrl(url: Uri, root: File): String? {
+    val host = url.host?.lowercase(Locale.ROOT) ?: return null
+    if (host != "127.0.0.1" && host != "localhost") return null
+    val relative = Uri.decode(url.path.orEmpty()).trimStart('/')
+    if (relative.isBlank() || !File(root, relative).isFile) return null
+    val encoded = relative.split('/').joinToString("/") { Uri.encode(it) }
+    return "$ARTIFACT_ORIGIN/$encoded"
+}
+
 private fun artifactResponse(root: File, url: Uri): WebResourceResponse {
     val relative = Uri.decode(url.path.orEmpty()).trimStart('/')
     val requested = runCatching { File(root, relative).canonicalFile }.getOrNull()
@@ -563,12 +578,33 @@ private fun artifactResponse(root: File, url: Uri): WebResourceResponse {
         return WebResourceResponse("text/html", "UTF-8", 404, "Not Found", emptyMap(),
             ByteArrayInputStream(artifactErrorHtml(relative.ifBlank { "Файл" }, "net::ERR_FILE_NOT_FOUND").toByteArray()))
     }
-    val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(requested.extension.lowercase())
-        ?: "application/octet-stream"
+    val mime = artifactMime(requested.extension.lowercase())
     val textual = mime.startsWith("text/", true) || mime in setOf(
         "application/javascript", "application/json", "application/xml", "image/svg+xml",
     )
     return WebResourceResponse(mime, if (textual) "UTF-8" else null, requested.inputStream())
+}
+
+private fun artifactMime(extension: String): String = when (extension) {
+    "html", "htm" -> "text/html"
+    "css" -> "text/css"
+    "js", "mjs" -> "application/javascript"
+    "json" -> "application/json"
+    "xml" -> "application/xml"
+    "svg" -> "image/svg+xml"
+    "png" -> "image/png"
+    "jpg", "jpeg" -> "image/jpeg"
+    "gif" -> "image/gif"
+    "webp" -> "image/webp"
+    "bmp" -> "image/bmp"
+    "avif" -> "image/avif"
+    "ico" -> "image/x-icon"
+    "woff" -> "font/woff"
+    "woff2" -> "font/woff2"
+    "ttf" -> "font/ttf"
+    "otf" -> "font/otf"
+    else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+        ?: "application/octet-stream"
 }
 
 private fun artifactErrorHtml(name: String, reason: String): String {
