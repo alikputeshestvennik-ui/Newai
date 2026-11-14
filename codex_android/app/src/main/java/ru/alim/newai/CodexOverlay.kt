@@ -14,8 +14,10 @@ import android.os.IBinder
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -120,6 +122,33 @@ class CodexOverlayService : Service() {
             }
             elevation = dp(6).toFloat()
         }
+        val close = textView(18f, Th.c.ink.toArgb(), true).apply {
+            text = "×"
+            gravity = Gravity.CENTER
+            contentDescription = "Закрыть окно"
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Th.c.line.toArgb())
+            }
+            setOnClickListener { closeOverlay() }
+        }
+        val dragBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            contentDescription = "Удерживайте, чтобы перетащить окно"
+        }
+        val grip = textView(13f, Th.c.muted.toArgb(), true).apply {
+            text = "⠿"
+            gravity = Gravity.CENTER
+        }
+        val title = textView(10f, Th.c.muted.toArgb(), true).apply {
+            text = "Reasoning"
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        dragBar.addView(grip, LinearLayout.LayoutParams(dp(20), dp(36)))
+        dragBar.addView(title, LinearLayout.LayoutParams(0, dp(36), 1f))
+        dragBar.addView(close, LinearLayout.LayoutParams(dp(36), dp(36)))
+        card.addView(dragBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         reasonView = textView(10f, Th.c.ink.toArgb(), false).apply {
             text = "…"
             setLineSpacing(dp(2).toFloat(), 1f)
@@ -144,7 +173,8 @@ class CodexOverlayService : Service() {
             x = dp(14)
             y = dp(96)
         }
-        installDrag(card, wm, layout) { showOpenAction() }
+        installLongPressDrag(dragBar, wm, layout, consumeBeforeLongPress = true) { showOpenAction() }
+        installLongPressDrag(scroller, wm, layout, consumeBeforeLongPress = false) { showOpenAction() }
         val frame = FrameLayout(this).apply {
             addView(card, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         }
@@ -167,16 +197,36 @@ class CodexOverlayService : Service() {
         reasonScroll = null
     }
 
+    private fun closeOverlay() {
+        hideOpenAction()
+        stopSelf()
+    }
+
     private fun setWindowVisible(visible: Boolean) {
         if (visible) showWindow() else hideWindow()
     }
 
-    private fun installDrag(view: View, wm: WindowManager, layout: WindowManager.LayoutParams, onTap: () -> Unit) {
+    private fun installLongPressDrag(
+        view: View,
+        wm: WindowManager,
+        layout: WindowManager.LayoutParams,
+        consumeBeforeLongPress: Boolean,
+        onLongPressRelease: () -> Unit,
+    ) {
+        val touchSlop = ViewConfiguration.get(view.context).scaledTouchSlop.toFloat()
         var downX = 0f
         var downY = 0f
         var startX = 0
         var startY = 0
-        var moved = false
+        var longPressActive = false
+        var dragged = false
+        var cancelled = false
+        val activateLongPress = Runnable {
+            if (!cancelled) {
+                longPressActive = true
+                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            }
+        }
         view.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -184,25 +234,41 @@ class CodexOverlayService : Service() {
                     downY = event.rawY
                     startX = layout.x
                     startY = layout.y
-                    moved = false
-                    true
+                    longPressActive = false
+                    dragged = false
+                    cancelled = false
+                    view.postDelayed(activateLongPress, ViewConfiguration.getLongPressTimeout().toLong())
+                    consumeBeforeLongPress
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = (event.rawX - downX).toInt()
-                    val dy = (event.rawY - downY).toInt()
-                    if (kotlin.math.abs(dx) > dp(3) || kotlin.math.abs(dy) > dp(3)) moved = true
-                    if (moved) {
-                        layout.x = startX + dx
-                        layout.y = startY + dy
-                        runCatching { wm.updateViewLayout(root ?: view, layout) }
+                    val dx = event.rawX - downX
+                    val dy = event.rawY - downY
+                    val movedEnough = kotlin.math.abs(dx) > touchSlop || kotlin.math.abs(dy) > touchSlop
+                    if (!longPressActive && !cancelled && movedEnough) {
+                        cancelled = true
+                        view.removeCallbacks(activateLongPress)
+                    } else if (longPressActive && movedEnough) {
+                        dragged = true
+                        val target = root ?: view
+                        val maxX = (resources.displayMetrics.widthPixels - target.width).coerceAtLeast(0)
+                        val maxY = (resources.displayMetrics.heightPixels - target.height).coerceAtLeast(0)
+                        layout.x = (startX + dx.toInt()).coerceIn(0, maxX)
+                        layout.y = (startY + dy.toInt()).coerceIn(0, maxY)
+                        runCatching { wm.updateViewLayout(target, layout) }
                     }
-                    true
+                    longPressActive || consumeBeforeLongPress
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!moved) onTap()
-                    true
+                    view.removeCallbacks(activateLongPress)
+                    if (longPressActive && !dragged && !cancelled) onLongPressRelease()
+                    longPressActive = false
+                    consumeBeforeLongPress
                 }
-                MotionEvent.ACTION_CANCEL -> true
+                MotionEvent.ACTION_CANCEL -> {
+                    view.removeCallbacks(activateLongPress)
+                    longPressActive = false
+                    consumeBeforeLongPress
+                }
                 else -> false
             }
         }
@@ -242,7 +308,8 @@ class CodexOverlayService : Service() {
                 shape = GradientDrawable.OVAL
                 setColor(Color.argb(70, 255, 255, 255))
             }
-            setOnClickListener { hideOpenAction() }
+            contentDescription = "Закрыть окно"
+            setOnClickListener { closeOverlay() }
         }
         overlay.addView(close, FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP or Gravity.END).apply {
             topMargin = dp(4)
