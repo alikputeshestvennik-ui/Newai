@@ -31,14 +31,18 @@ class TaskService : Service() {
         latestStartId = startId
         val sessionId = intent?.getStringExtra("session").orEmpty()
         val text = intent?.getStringExtra("text").orEmpty().trim()
+        val files = Docs.fromJson(runCatching {
+            org.json.JSONArray(intent?.getStringExtra("files").orEmpty())
+        }.getOrNull())
         val session = Sessions.find(sessionId)
-        if (session == null || text.isBlank()) {
+        if (session == null || (text.isBlank() && files.isEmpty())) {
             if (work.isEmpty()) stopSelfResult(startId)
             return START_NOT_STICKY
         }
 
         if (session.busy) {
             session.pending = text
+            session.pendingFiles = files
             Sessions.save()
             if (Prefs.followUp == "interrupt") {
                 scope.launch(Dispatchers.IO) { runCatching { CodexGateway.cancel(applicationContext, session.taskId) } }
@@ -49,7 +53,7 @@ class TaskService : Service() {
         startForegroundNow(session, work.size + 1)
         acquireWakeLock()
         session.busy = true
-        work[session.id] = scope.launch { runSession(session, text) }
+        work[session.id] = scope.launch { runSession(session, text, files) }
         return START_NOT_STICKY
     }
 
@@ -73,13 +77,17 @@ class TaskService : Service() {
             .also { it.acquire(40 * 60_000L) }
     }
 
-    private suspend fun runSession(session: CodexSession, first: String) {
+    private suspend fun runSession(session: CodexSession, first: String, firstFiles: List<Docs.FileRef>) {
         var next: String? = first
+        var nextFiles = firstFiles
         try {
-            while (!next.isNullOrBlank() && scope.isActive) {
-                val text = next
+            while ((!next.isNullOrBlank() || nextFiles.isNotEmpty()) && scope.isActive) {
+                val text = next.orEmpty()
+                val files = nextFiles
                 next = null
+                nextFiles = emptyList()
                 session.pending = ""
+                session.pendingFiles = emptyList()
                 val providerId = session.providerId.ifBlank { Providers.defaultProvider(this) }
                 val provider = Providers.find(providerId)
                 val model = session.model.ifBlank { Providers.firstRuntimeModel(providerId) }
@@ -89,10 +97,10 @@ class TaskService : Service() {
                 }
                 session.providerId = providerId
                 session.model = model
-                session.messages += Message(role = "me", text = text)
+                session.messages += Message(role = "me", text = text, files = files)
                 session.draft = ""
                 Sessions.save()
-                val goal = Sessions.prompt(session, text)
+                val goal = Sessions.prompt(session, text, files)
                 val key = runCatching { Providers.key(applicationContext, providerId) }.getOrDefault("")
                 val poll = scope.launch {
                     while (scope.isActive) {
@@ -112,13 +120,16 @@ class TaskService : Service() {
                     throw e
                 } catch (e: Exception) {
                     val message = e.message ?: "Не удалось выполнить задачу"
-                    if (session.pending.isBlank()) session.messages += Message(role = "system", text = message)
+                    if (session.pending.isBlank() && session.pendingFiles.isEmpty()) {
+                        session.messages += Message(role = "system", text = message)
+                    }
                 } finally {
                     poll.cancel()
                     session.progress = ""
                     Sessions.save()
                 }
                 next = session.pending.ifBlank { null }
+                nextFiles = session.pendingFiles
             }
         } finally {
             session.busy = false

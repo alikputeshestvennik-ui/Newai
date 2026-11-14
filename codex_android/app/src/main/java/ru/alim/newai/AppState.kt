@@ -15,7 +15,29 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-object Docs { data class FileRef(val name: String, val uri: Uri, val mime: String, val path: String = "") }
+object Docs {
+    data class FileRef(val name: String, val uri: Uri, val mime: String, val path: String = "")
+
+    fun toJson(files: List<FileRef>): JSONArray = JSONArray().apply {
+        files.forEach { file ->
+            put(JSONObject().put("name", file.name).put("uri", file.uri.toString())
+                .put("mime", file.mime).put("path", file.path))
+        }
+    }
+
+    fun fromJson(array: JSONArray?): List<FileRef> {
+        if (array == null) return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            val file = array.optJSONObject(index) ?: return@mapNotNull null
+            FileRef(
+                name = file.optString("name", "file"),
+                uri = Uri.parse(file.optString("uri", "")),
+                mime = file.optString("mime", "application/octet-stream"),
+                path = file.optString("path", ""),
+            )
+        }
+    }
+}
 
 object ModelRouting {
     fun isChatGpt(model: String) = model.startsWith("chatgpt:")
@@ -88,6 +110,8 @@ class CodexSession(
     var name by mutableStateOf(name)
     var taskId by mutableStateOf(taskId)
     val messages: SnapshotStateList<Message> = mutableStateListOf()
+    val attachments = mutableStateListOf<Docs.FileRef>()
+    var pendingFiles: List<Docs.FileRef> = emptyList()
     var draft by mutableStateOf("")
     var providerId by mutableStateOf("")
     var model by mutableStateOf("")
@@ -121,21 +145,18 @@ object Sessions {
                     created = item.optLong("created", System.currentTimeMillis()),
                 )
                 session.draft = item.optString("draft", "")
+                session.attachments += Docs.fromJson(item.optJSONArray("attachments"))
                 session.providerId = item.optString("provider", "")
                 session.model = item.optString("model", "")
                 session.reasoningEffort = item.optString("effort", "medium")
                 val messages = item.optJSONArray("messages") ?: JSONArray()
                 for (n in 0 until messages.length()) {
                     val m = messages.getJSONObject(n)
-                    val files = m.optJSONArray("files") ?: JSONArray()
                     session.messages += Message(
                         id = m.optString("id", UUID.randomUUID().toString()),
                         role = m.optString("role", "codex"),
                         text = m.optString("text", ""),
-                        files = (0 until files.length()).map { k ->
-                            val f = files.getJSONObject(k)
-                            Docs.FileRef(f.optString("name"), Uri.parse(f.optString("uri")), f.optString("mime", "application/octet-stream"), f.optString("path", ""))
-                        },
+                        files = Docs.fromJson(m.optJSONArray("files")),
                         ts = m.optLong("ts", System.currentTimeMillis()),
                     )
                 }
@@ -176,6 +197,7 @@ object Sessions {
         if (list.size <= 1) {
             session.messages.clear()
             session.draft = ""
+            session.attachments.clear()
             session.progress = ""
             session.taskId = newTaskId()
             save()
@@ -192,23 +214,28 @@ object Sessions {
         list.forEach { session ->
             val messages = JSONArray()
             session.messages.forEach { m ->
-                val files = JSONArray()
-                m.files.forEach { f ->
-                    files.put(JSONObject().put("name", f.name).put("uri", f.uri.toString()).put("mime", f.mime).put("path", f.path))
-                }
                 messages.put(JSONObject().put("id", m.id).put("role", m.role).put("text", m.text)
-                    .put("ts", m.ts).put("files", files))
+                    .put("ts", m.ts).put("files", Docs.toJson(m.files)))
             }
             array.put(JSONObject().put("id", session.id).put("name", session.name).put("task_id", session.taskId)
                 .put("created", session.created).put("draft", session.draft).put("provider", session.providerId)
-                .put("model", session.model).put("effort", session.reasoningEffort).put("messages", messages))
+                .put("model", session.model).put("effort", session.reasoningEffort).put("messages", messages)
+                .put("attachments", Docs.toJson(session.attachments)))
         }
         storage.edit().putString("items", array.toString()).apply()
     }
 
-    fun prompt(session: CodexSession, text: String): String {
+    fun prompt(session: CodexSession, text: String, files: List<Docs.FileRef> = emptyList()): String {
         val history = session.messages.takeLast(12).joinToString("\n\n") { "${it.role}: ${it.text.takeLast(1500)}" }.takeLast(10000)
-        return "Текущая задача:\n$text\n\nКонтекст переписки:\n$history"
+        val attached = files.filter { it.path.isNotBlank() }
+            .joinToString("\n") { "- ${it.name}: ${it.path}" }
+        val task = if (attached.isBlank()) text else buildString {
+            if (text.isNotBlank()) append(text).append("\n\n")
+            else append("Посмотри прикреплённые пользователем файлы.\n\n")
+            append("Файлы, прикреплённые пользователем (используй эти пути для чтения):\n")
+            append(attached)
+        }
+        return "Текущая задача:\n$task\n\nКонтекст переписки:\n$history"
     }
 
     private fun newTaskId() = "vibe_" + UUID.randomUUID().toString().replace("-", "")

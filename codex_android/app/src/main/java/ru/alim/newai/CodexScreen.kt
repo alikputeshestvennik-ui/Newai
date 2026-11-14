@@ -1,9 +1,9 @@
 package ru.alim.newai
 
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -12,6 +12,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -39,6 +40,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
@@ -73,6 +75,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -80,6 +83,9 @@ import java.util.Date
 import java.util.Locale
 
 private val hhmm = SimpleDateFormat("HH:mm", Locale("ru"))
+private val LOCAL_FILE_LINK = Regex("""\[([^]]+)]\((?:(?:/data/|/storage/|file://)[^)]*)\)""")
+
+private fun displayText(text: String): String = LOCAL_FILE_LINK.replace(text) { it.groupValues[1] }
 
 /** Подгоняет произвольный HTML/SVG под размер инлайн-превью без обрезки и лишнего зума. */
 private const val ARTIFACT_FIT_SCRIPT = """
@@ -174,7 +180,8 @@ fun CodexScreen(onSettings: () -> Unit) {
 
     fun send() {
         val text = session.draft.trim()
-        if (text.isBlank()) return
+        val files = session.attachments.toList()
+        if (text.isBlank() && files.isEmpty()) return
         val providerId = session.providerId.ifBlank { Providers.defaultProvider(ctx) }
         val provider = Providers.find(providerId)
         val model = session.model.ifBlank { Providers.firstRuntimeModel(providerId) }
@@ -185,10 +192,12 @@ fun CodexScreen(onSettings: () -> Unit) {
         session.providerId = providerId
         session.model = model
         session.draft = ""
+        session.attachments.clear()
         hint = null
         Sessions.save()
         ctx.startForegroundService(Intent(ctx, TaskService::class.java)
-            .putExtra("session", session.id).putExtra("text", text))
+            .putExtra("session", session.id).putExtra("text", text)
+            .putExtra("files", Docs.toJson(files).toString()))
         Prefs.overlayTask = session.taskId
         Prefs.overlaySession = session.id
         if (Prefs.floatingOverlay) CodexOverlayService.start(ctx, session.taskId, session.id)
@@ -224,13 +233,25 @@ fun CodexScreen(onSettings: () -> Unit) {
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding()
             .padding(horizontal = 10.dp).padding(top = 4.dp, bottom = 10.dp)
             .onSizeChanged { composerH = it.height }) {
-            if (session.busy && session.pending.isNotBlank()) {
+            if (session.busy && (session.pending.isNotBlank() || session.pendingFiles.isNotEmpty())) {
                 Text(if (Prefs.followUp == "interrupt") "Новое сообщение остановит текущую задачу" else "Новое сообщение пойдёт после текущей задачи",
                     style = body(11, color = Muted), modifier = Modifier.padding(start = 8.dp, bottom = 4.dp))
             }
             if (composerFocused) CodexKeyboardBar(session)
             CodexRunBubble(activity)
             hint?.let { Text(it, style = body(12, color = Danger), modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) }
+            if (session.attachments.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    session.attachments.toList().forEach { file ->
+                        PendingAttachment(file) {
+                            session.attachments.remove(file)
+                            Sessions.save()
+                        }
+                    }
+                }
+            }
             Box(Modifier.fillMaxWidth().heightIn(min = 46.dp)) {
                 Row(Modifier.fillMaxWidth().padding(end = 56.dp).heightIn(min = 48.dp).clip(shp(24.dp))
                     .background(Card).border(1.dp, Line, shp(24.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
@@ -246,7 +267,7 @@ fun CodexScreen(onSettings: () -> Unit) {
                     Icon(rememberVectorPainter(icClip), "Прикрепить файл", tint = Muted,
                         modifier = Modifier.size(36.dp).clickable { attachPick.launch(arrayOf("*/*")) }.padding(6.dp))
                 }
-                val canSend = session.draft.isNotBlank()
+                val canSend = session.draft.isNotBlank() || session.attachments.isNotEmpty()
                 val showStop = session.busy && !canSend
                 if (!canSend && !showStop) {
                     Box(Modifier.align(Alignment.BottomEnd)) {
@@ -290,28 +311,39 @@ fun CodexScreen(onSettings: () -> Unit) {
 private fun Modifier.onFocusChangedCompat(onChange: (Boolean) -> Unit): Modifier =
     this.onFocusChanged { onChange(it.isFocused) }
 
-/** Копирует выбранные файлы в рабочую папку локального Codex и подставляет их пути в сообщение. */
+/** Копирует выбранные файлы в рабочую папку Codex и оставляет в композере визуальные вложения. */
 private fun attachFiles(ctx: android.content.Context, session: CodexSession, uris: List<Uri>) {
     if (uris.isEmpty()) return
     val workspace = java.io.File(java.io.File(EmbeddedRuntime.paths(ctx).tenHome, "workspace"), session.taskId)
     workspace.mkdirs()
-    val added = mutableListOf<String>()
+    val added = mutableListOf<Docs.FileRef>()
     for (uri in uris) {
         val name = runCatching {
             ctx.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx) else null
             }
-        }.getOrNull().orEmpty().ifBlank { "file_${System.currentTimeMillis()}" }
+        }.getOrNull().orEmpty().let { java.io.File(it).name }.ifBlank { "file_${System.currentTimeMillis()}" }
         val dest = java.io.File(workspace, name)
+        val mime = runCatching { ctx.contentResolver.getType(uri) }.getOrNull().orEmpty().ifBlank {
+            MimeTypeMap.getSingleton().getMimeTypeFromExtension(dest.extension.lowercase())
+                ?: "application/octet-stream"
+        }
         runCatching {
             ctx.contentResolver.openInputStream(uri)?.use { input ->
                 dest.outputStream().use { input.copyTo(it) }
             }
-        }.onSuccess { added += dest.absolutePath }
+        }.onSuccess {
+            val openUri = runCatching {
+                FileProvider.getUriForFile(ctx, ctx.packageName + ".files", dest)
+            }.getOrDefault(uri)
+            added += Docs.FileRef(dest.name, openUri, mime, dest.absolutePath)
+        }
     }
     if (added.isNotEmpty()) {
-        session.draft = (session.draft + "\n" + added.joinToString("\n")).trim().take(4000)
+        added.forEach { file ->
+            if (session.attachments.none { it.path == file.path }) session.attachments += file
+        }
         Sessions.save()
     }
 }
@@ -350,10 +382,14 @@ private fun MessageBubble(message: Message) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (message.mine) Alignment.End else Alignment.Start) {
         Column(Modifier.widthIn(max = if (message.mine) 320.dp else 600.dp).clip(shape).background(bubble)
             .padding(16.dp, 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            androidx.compose.foundation.text.selection.SelectionContainer {
-                Text(message.text, style = body(16, color = ink), lineHeight = 24.sp)
+            if (message.text.isNotBlank()) {
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(displayText(message.text), style = body(16, color = ink), lineHeight = 24.sp)
+                }
             }
-            message.files.forEach { file -> FileCard(file) }
+            message.files.forEach { file ->
+                if (message.mine) SentAttachment(file) else FileCard(file)
+            }
             Text(hhmm.format(Date(message.ts)), style = body(11, color = meta), modifier = Modifier.align(Alignment.End))
         }
     }
@@ -362,13 +398,41 @@ private fun MessageBubble(message: Message) {
 @Composable
 private fun FileCard(file: Docs.FileRef) {
     when {
-        file.name.endsWith(".svg", true) || file.name.endsWith(".html", true) || file.name.endsWith(".htm", true) ->
+        file.isWebArtifact() ->
             if (file.path.isNotBlank()) WebArtifact(file) else DocFileCard(file)
-        file.name.endsWith(".png", true) || file.name.endsWith(".jpg", true) || file.name.endsWith(".jpeg", true) ||
-            file.name.endsWith(".webp", true) || file.name.endsWith(".gif", true) ->
+        file.isImageArtifact() ->
             if (file.path.isNotBlank()) ImageArtifact(file) else DocFileCard(file)
         else -> DocFileCard(file)
     }
+}
+
+private fun Docs.FileRef.isWebArtifact(): Boolean =
+    name.endsWith(".svg", true) || name.endsWith(".html", true) || name.endsWith(".htm", true)
+
+private fun Docs.FileRef.isImageArtifact(): Boolean =
+    (mime.startsWith("image/", true) && !name.endsWith(".svg", true)) ||
+        name.endsWith(".png", true) || name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) ||
+        name.endsWith(".webp", true) || name.endsWith(".gif", true) || name.endsWith(".bmp", true)
+
+private fun fileBadge(name: String): String = when {
+    name.endsWith(".pdf", true) -> "PDF"
+    name.endsWith(".xlsx", true) || name.endsWith(".xls", true) || name.endsWith(".csv", true) -> "XLS"
+    name.endsWith(".docx", true) || name.endsWith(".doc", true) -> "DOC"
+    name.endsWith(".html", true) || name.endsWith(".htm", true) -> "HTML"
+    name.endsWith(".svg", true) -> "SVG"
+    name.endsWith(".zip", true) -> "ZIP"
+    name.endsWith(".apk", true) -> "APK"
+    name.substringAfterLast('.', "").takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)?.take(4) ?: "FILE"
+}
+
+private fun decodeImage(path: String, maxDimension: Int = 2048): android.graphics.Bitmap? {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    var sample = 1
+    while (bounds.outWidth / sample > maxDimension || bounds.outHeight / sample > maxDimension) sample *= 2
+    return android.graphics.BitmapFactory.decodeFile(path,
+        android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
 }
 
 private fun openFile(ctx: android.content.Context, file: Docs.FileRef) {
@@ -378,45 +442,14 @@ private fun openFile(ctx: android.content.Context, file: Docs.FileRef) {
     }
 }
 
-/** Инлайн-превью HTML и SVG, чтобы макеты и рисунки кодом были видны сразу в диалоге. */
+/** Инлайн-превью HTML и SVG без карточки, заголовка и лишней рамки. */
 @Composable
 private fun WebArtifact(file: Docs.FileRef) {
-    val ctx = LocalContext.current
     val aspectRatio = remember(file.path) { artifactAspectRatio(file) }
-    Column(Modifier.fillMaxWidth().clip(shp(12.dp)).background(Card.copy(alpha = 0.8f))
-        .border(1.dp, Line, shp(12.dp))) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(26.dp).clip(shp(8.dp)).background(Teal), contentAlignment = Alignment.Center) {
-                Text(if (file.name.endsWith(".svg", true)) "SVG" else "HTML", style = body(10, FontWeight.Bold, OnAccent))
-            }
-            Spacer(Modifier.width(8.dp))
-            Text(file.name, style = body(12, FontWeight.SemiBold, Ink), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("Открыть", style = body(12, FontWeight.SemiBold, Teal), modifier = Modifier.clickable { openFile(ctx, file) }.padding(6.dp))
-        }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val previewHeight = (maxWidth / aspectRatio).coerceIn(180.dp, 520.dp)
         androidx.compose.runtime.key(file.path) {
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val previewHeight = (maxWidth / aspectRatio).coerceIn(160.dp, 420.dp)
-                AndroidView(
-                    factory = { WebView(it).apply {
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = true
-                        settings.allowFileAccess = true
-                        settings.setSupportZoom(false)
-                        settings.builtInZoomControls = false
-                        settings.displayZoomControls = false
-                        webViewClient = object : WebViewClient() {
-                            override fun onPageFinished(view: WebView, url: String?) {
-                                super.onPageFinished(view, url)
-                                view.evaluateJavascript(ARTIFACT_FIT_SCRIPT, null)
-                            }
-                        }
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        loadUrl(android.net.Uri.fromFile(java.io.File(file.path)).toString())
-                    } },
-                    update = { },
-                    modifier = Modifier.fillMaxWidth().height(previewHeight),
-                )
-            }
+            ArtifactWebView(file, Modifier.fillMaxWidth().height(previewHeight).clip(shp(12.dp)))
         }
     }
 }
@@ -426,35 +459,114 @@ private fun ImageArtifact(file: Docs.FileRef) {
     val ctx = LocalContext.current
     val bitmap by produceState<ImageBitmap?>(null, file.path) {
         value = withContext(Dispatchers.IO) {
-            runCatching { BitmapFactory.decodeFile(file.path)?.asImageBitmap() }.getOrNull()
+            runCatching { decodeImage(file.path)?.asImageBitmap() }.getOrNull()
         }
     }
-    Column(Modifier.fillMaxWidth().clip(shp(12.dp)).background(Card.copy(alpha = 0.8f))
-        .border(1.dp, Line, shp(12.dp))) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
         val bmp = bitmap
         if (bmp != null) {
-            Image(bmp, file.name, Modifier.fillMaxWidth().heightIn(max = 420.dp), contentScale = ContentScale.FillWidth)
+            val ratio = bmp.width.toFloat() / bmp.height.coerceAtLeast(1)
+            val width = minOf(maxWidth, 480.dp * ratio)
+            val height = width / ratio
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Image(bmp, file.name, Modifier.width(width).height(height).clip(shp(12.dp))
+                    .clickable { openFile(ctx, file) }, contentScale = ContentScale.Fit)
+            }
+        } else {
+            DocFileCard(file)
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(file.name, style = body(12, FontWeight.SemiBold, Ink), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("Открыть", style = body(12, FontWeight.SemiBold, Teal), modifier = Modifier.clickable { openFile(ctx, file) }.padding(6.dp))
+    }
+}
+
+@Composable
+private fun ArtifactWebView(file: Docs.FileRef, modifier: Modifier) {
+    AndroidView(
+        factory = { WebView(it).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.allowFileAccess = true
+            settings.setSupportZoom(false)
+            settings.builtInZoomControls = false
+            settings.displayZoomControls = false
+            webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView, url: String?) {
+                    super.onPageFinished(view, url)
+                    view.evaluateJavascript(ARTIFACT_FIT_SCRIPT, null)
+                }
+            }
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            loadUrl(android.net.Uri.fromFile(java.io.File(file.path)).toString())
+        } },
+        update = { },
+        modifier = modifier,
+    )
+}
+
+/** Компактная карточка выбранного файла: у изображений сразу видна миниатюра. */
+@Composable
+private fun PendingAttachment(file: Docs.FileRef, onRemove: () -> Unit) {
+    CompactAttachment(file, width = 104.dp, thumbHeight = 76.dp, onRemove = onRemove)
+}
+
+@Composable
+private fun SentAttachment(file: Docs.FileRef) {
+    CompactAttachment(file, width = 148.dp, thumbHeight = 104.dp, onRemove = null)
+}
+
+@Composable
+private fun CompactAttachment(
+    file: Docs.FileRef,
+    width: androidx.compose.ui.unit.Dp,
+    thumbHeight: androidx.compose.ui.unit.Dp,
+    onRemove: (() -> Unit)?,
+) {
+    val ctx = LocalContext.current
+    Box(Modifier.width(width)) {
+        Column(Modifier.fillMaxWidth().clip(shp(12.dp)).background(Card.copy(alpha = 0.92f))
+            .border(1.dp, Line, shp(12.dp)).clickable { openFile(ctx, file) }) {
+            Box(Modifier.fillMaxWidth().height(thumbHeight).background(AccentSoft), contentAlignment = Alignment.Center) {
+                if (file.isImageArtifact() && file.path.isNotBlank()) {
+                    val bitmap by produceState<ImageBitmap?>(null, file.path) {
+                        value = withContext(Dispatchers.IO) {
+                            runCatching { decodeImage(file.path, 640)?.asImageBitmap() }.getOrNull()
+                        }
+                    }
+                    val bmp = bitmap
+                    if (bmp != null) {
+                        Image(bmp, file.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    } else {
+                        AttachmentBadge(file)
+                    }
+                } else {
+                    AttachmentBadge(file)
+                }
+            }
+            Text(file.name, style = body(11, FontWeight.SemiBold, Ink), maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
         }
+        if (onRemove != null) {
+            Box(Modifier.align(Alignment.TopEnd).padding(4.dp).size(21.dp).clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.62f)).clickable(onClickLabel = "Удалить вложение", onClick = onRemove),
+                contentAlignment = Alignment.Center) {
+                Text("×", style = body(15, FontWeight.Bold, Color.White))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentBadge(file: Docs.FileRef) {
+    Box(Modifier.size(40.dp).clip(shp(10.dp)).background(Teal), contentAlignment = Alignment.Center) {
+        Text(fileBadge(file.name), style = body(11, FontWeight.Bold, OnAccent))
     }
 }
 
 @Composable
 private fun DocFileCard(file: Docs.FileRef) {
     val ctx = LocalContext.current
-    val badge = when {
-        file.name.endsWith(".pdf", true) -> "PDF"
-        file.name.endsWith(".xlsx", true) -> "XLS"
-        else -> "DOC"
-    }
     Row(Modifier.fillMaxWidth().clip(shp(12.dp)).background(Card.copy(alpha = 0.7f))
         .clickable { openFile(ctx, file) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(40.dp).clip(shp(10.dp)).background(Teal), contentAlignment = Alignment.Center) {
-            Text(badge, style = body(11, FontWeight.Bold, OnAccent))
-        }
+        AttachmentBadge(file)
         Spacer(Modifier.width(10.dp))
         Text(file.name, style = body(13, FontWeight.SemiBold, Ink), maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
