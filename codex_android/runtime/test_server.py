@@ -133,6 +133,22 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(body["files"][0]["name"], "result.txt")
         self.assertGreater(body["files"][0]["size"], 0)
 
+    def test_generated_cache_and_build_files_are_hidden(self):
+        def inspect(task, args, prompt, env, output, timeout):
+            workspace = Path(args[args.index("-C") + 1])
+            cache = workspace / "__pycache__"
+            cache.mkdir()
+            (cache / "server.cpython-314.pyc").write_bytes(b"cache")
+            build = workspace / "build"
+            build.mkdir()
+            (build / "generated.txt").write_text("build output", encoding="utf-8")
+            (workspace / "preview.html").write_text("<h1>preview</h1>", encoding="utf-8")
+
+        with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
+            status, body = self.request(self.bridge.SECRET, {"goal": "make a preview", "task_id": "filtered-files-task"})
+        self.assertEqual(status, 200)
+        self.assertEqual([item["name"] for item in body["files"]], ["preview.html"])
+
     def test_gpt_uses_openai_responses(self):
         def inspect(task, args, prompt, env, output, timeout):
             self.assertEqual(env["TEN_PROVIDER_TOKEN"], "chatgpt-token")

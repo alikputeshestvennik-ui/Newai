@@ -39,6 +39,23 @@ object Docs {
     }
 }
 
+private val ignoredArtifactDirs = setOf(
+    ".git", "__pycache__", ".gradle", ".kotlin", ".idea", ".vscode", "node_modules", "build",
+)
+private val ignoredArtifactSuffixes = setOf(
+    "pyc", "pyo", "class", "dex", "o", "obj", "tmp", "temp", "log",
+)
+private val ignoredArtifactNames = setOf(".ds_store", "thumbs.db", "desktop.ini")
+
+internal fun isGeneratedArtifact(name: String, path: String): Boolean {
+    val parts = path.split('/', '\\').dropLast(1).map { it.lowercase() }
+    if (parts.any { it in ignoredArtifactDirs }) return true
+    if (name.lowercase() in ignoredArtifactNames) return true
+    return name.substringAfterLast('.', "").lowercase() in ignoredArtifactSuffixes
+}
+
+internal fun Docs.FileRef.isGeneratedArtifact(): Boolean = isGeneratedArtifact(name, path)
+
 object ModelRouting {
     fun isChatGpt(model: String) = model.startsWith("chatgpt:")
     fun isDeepSeek(model: String) = model.startsWith("deepseek:")

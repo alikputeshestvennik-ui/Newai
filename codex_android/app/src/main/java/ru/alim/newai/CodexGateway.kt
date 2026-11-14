@@ -97,6 +97,7 @@ object CodexGateway {
             val item = array.optJSONObject(i) ?: continue
             val file = runCatching { java.io.File(item.optString("path")).canonicalFile }.getOrNull() ?: continue
             if (!file.isFile || !file.path.startsWith(root.path + java.io.File.separator)) continue
+            if (isGeneratedArtifact(file.name, file.path)) continue
             val uri = runCatching { FileProvider.getUriForFile(ctx, ctx.packageName + ".files", file) }.getOrNull() ?: continue
             files += Docs.FileRef(file.name, uri, item.optString("mime", "application/octet-stream"), file.path)
         }

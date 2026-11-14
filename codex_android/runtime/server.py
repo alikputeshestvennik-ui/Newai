@@ -143,11 +143,33 @@ class Task:
         }
 
 
+IGNORED_ARTIFACT_DIRS = {
+    ".git", "__pycache__", ".gradle", ".kotlin", ".idea", ".vscode",
+    "node_modules", "build",
+}
+IGNORED_ARTIFACT_SUFFIXES = {
+    ".pyc", ".pyo", ".class", ".dex", ".o", ".obj", ".tmp", ".temp", ".log",
+}
+IGNORED_ARTIFACT_NAMES = {".ds_store", "thumbs.db", "desktop.ini"}
+
+
+def ignored_artifact(path: Path, workspace: Path) -> bool:
+    try:
+        relative = path.relative_to(workspace)
+    except ValueError:
+        return True
+    if any(part.lower() in IGNORED_ARTIFACT_DIRS for part in relative.parts[:-1]):
+        return True
+    if path.name.lower() in IGNORED_ARTIFACT_NAMES:
+        return True
+    return path.suffix.lower() in IGNORED_ARTIFACT_SUFFIXES
+
+
 def workspace_snapshot(workspace: Path) -> dict[str, int]:
     snapshot: dict[str, int] = {}
     try:
         for item in workspace.rglob("*"):
-            if not item.is_file() or ".git" in item.parts:
+            if not item.is_file() or ignored_artifact(item, workspace):
                 continue
             try:
                 snapshot[str(item)] = item.stat().st_mtime_ns
@@ -162,7 +184,7 @@ def changed_files(workspace: Path, before: dict[str, int]) -> list[dict]:
     result: list[dict] = []
     try:
         for item in workspace.rglob("*"):
-            if not item.is_file() or ".git" in item.parts:
+            if not item.is_file() or ignored_artifact(item, workspace):
                 continue
             try:
                 stat = item.stat()

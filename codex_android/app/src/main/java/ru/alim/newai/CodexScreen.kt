@@ -6,6 +6,8 @@ import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -78,14 +80,13 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayInputStream
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 private val hhmm = SimpleDateFormat("HH:mm", Locale("ru"))
-private val LOCAL_FILE_LINK = Regex("""\[([^]]+)]\((?:(?:/data/|/storage/|file://)[^)]*)\)""")
-
-private fun displayText(text: String): String = LOCAL_FILE_LINK.replace(text) { it.groupValues[1] }
 
 /** Подгоняет произвольный HTML/SVG под размер инлайн-превью без обрезки и лишнего зума. */
 private const val ARTIFACT_FIT_SCRIPT = """
@@ -384,10 +385,10 @@ private fun MessageBubble(message: Message) {
             .padding(16.dp, 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (message.text.isNotBlank()) {
                 androidx.compose.foundation.text.selection.SelectionContainer {
-                    Text(displayText(message.text), style = body(16, color = ink), lineHeight = 24.sp)
+                    MarkdownText(message.text, ink)
                 }
             }
-            message.files.forEach { file ->
+            message.files.filterNot { it.isGeneratedArtifact() }.forEach { file ->
                 if (message.mine) SentAttachment(file) else FileCard(file)
             }
             Text(hhmm.format(Date(message.ts)), style = body(11, color = meta), modifier = Modifier.align(Alignment.End))
@@ -449,7 +450,7 @@ private fun WebArtifact(file: Docs.FileRef) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val previewHeight = (maxWidth / aspectRatio).coerceIn(180.dp, 520.dp)
         androidx.compose.runtime.key(file.path) {
-            ArtifactWebView(file, Modifier.fillMaxWidth().height(previewHeight).clip(shp(12.dp)))
+            ArtifactWebView(file, Modifier.fillMaxWidth().height(previewHeight))
         }
     }
 }
@@ -482,24 +483,102 @@ private fun ImageArtifact(file: Docs.FileRef) {
 private fun ArtifactWebView(file: Docs.FileRef, modifier: Modifier) {
     AndroidView(
         factory = { WebView(it).apply {
+            val root = artifactWorkspaceRoot(File(file.path))
+            val startUrl = artifactUrl(File(file.path), root)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            settings.allowFileAccess = true
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
             settings.setSupportZoom(false)
             settings.builtInZoomControls = false
             settings.displayZoomControls = false
+            isHorizontalScrollBarEnabled = false
+            isVerticalScrollBarEnabled = false
+            overScrollMode = android.view.View.OVER_SCROLL_NEVER
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String?) {
                     super.onPageFinished(view, url)
                     view.evaluateJavascript(ARTIFACT_FIT_SCRIPT, null)
                 }
+
+                override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                    val url = request.url
+                    return if (url.host.equals(ARTIFACT_HOST, true)) artifactResponse(root, url) else null
+                }
+
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                    val url = request.url
+                    if (url.host.equals(ARTIFACT_HOST, true)) return false
+                    runCatching {
+                        view.context.startActivity(Intent(Intent.ACTION_VIEW, url)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                    return true
+                }
+
+                override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
+                    super.onReceivedError(view, request, error)
+                    if (request.isForMainFrame) {
+                        view.loadDataWithBaseURL(null, artifactErrorHtml(file.name, error.description.toString()),
+                            "text/html", "UTF-8", null)
+                    }
+                }
             }
             setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            loadUrl(android.net.Uri.fromFile(java.io.File(file.path)).toString())
+            loadUrl(startUrl)
         } },
         update = { },
         modifier = modifier,
     )
+}
+
+private const val ARTIFACT_HOST = "newai.local"
+private const val ARTIFACT_ORIGIN = "https://newai.local"
+
+private fun artifactWorkspaceRoot(file: File): File {
+    val marker = "/workspace/"
+    val markerStart = file.path.indexOf(marker)
+    if (markerStart >= 0) {
+        val taskEnd = file.path.indexOf('/', markerStart + marker.length)
+        if (taskEnd > markerStart + marker.length) return File(file.path.substring(0, taskEnd))
+    }
+    return file.parentFile ?: File("/")
+}
+
+private fun artifactUrl(file: File, root: File): String {
+    val relative = runCatching { root.toURI().relativize(file.toURI()).path }
+        .getOrNull().orEmpty().ifBlank { file.name }
+    val encoded = relative.trimStart('/').split('/').joinToString("/") { Uri.encode(it) }
+    return "$ARTIFACT_ORIGIN/$encoded"
+}
+
+private fun artifactResponse(root: File, url: Uri): WebResourceResponse {
+    val relative = Uri.decode(url.path.orEmpty()).trimStart('/')
+    val requested = runCatching { File(root, relative).canonicalFile }.getOrNull()
+    val rootPath = runCatching { root.canonicalPath }.getOrDefault(root.absolutePath)
+    if (relative.isBlank() || requested == null || !requested.isFile ||
+        !requested.path.startsWith(rootPath + File.separator)) {
+        return WebResourceResponse("text/html", "UTF-8", 404, "Not Found", emptyMap(),
+            ByteArrayInputStream(artifactErrorHtml(relative.ifBlank { "Файл" }, "net::ERR_FILE_NOT_FOUND").toByteArray()))
+    }
+    val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(requested.extension.lowercase())
+        ?: "application/octet-stream"
+    val textual = mime.startsWith("text/", true) || mime in setOf(
+        "application/javascript", "application/json", "application/xml", "image/svg+xml",
+    )
+    return WebResourceResponse(mime, if (textual) "UTF-8" else null, requested.inputStream())
+}
+
+private fun artifactErrorHtml(name: String, reason: String): String {
+    fun escape(value: String) = value.replace("&", "&amp;").replace("<", "&lt;")
+        .replace(">", "&gt;").replace("\"", "&quot;")
+    return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;height:100%;background:#f6f7fb;color:#26313f;font:15px system-ui,sans-serif}
+body{display:grid;place-items:center;padding:24px;box-sizing:border-box}main{max-width:420px}
+b{display:block;margin-bottom:8px;font-size:17px}code{color:#5b6878;word-break:break-all}</style></head>
+<body><main><b>Не удалось показать ${escape(name)}</b><code>${escape(reason)}</code></main></body></html>"""
 }
 
 /** Компактная карточка выбранного файла: у изображений сразу видна миниатюра. */
