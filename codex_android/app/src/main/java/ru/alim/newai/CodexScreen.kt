@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -78,6 +79,62 @@ import java.util.Date
 import java.util.Locale
 
 private val hhmm = SimpleDateFormat("HH:mm", Locale("ru"))
+
+/** Подгоняет произвольный HTML/SVG под размер инлайн-превью без обрезки и лишнего зума. */
+private const val ARTIFACT_FIT_SCRIPT = """
+(function() {
+  if (window.__codexArtifactFit) return;
+  window.__codexArtifactFit = true;
+
+  var root = document.documentElement;
+  if (!root) return;
+
+  if (root.tagName && root.tagName.toLowerCase() === 'svg') {
+    root.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    root.style.width = '100vw';
+    root.style.height = '100vh';
+    root.style.maxWidth = '100vw';
+    root.style.maxHeight = '100vh';
+    root.style.display = 'block';
+    return;
+  }
+
+  var head = document.head || root;
+  var viewport = document.querySelector('meta[name="viewport"]');
+  if (!viewport) {
+    viewport = document.createElement('meta');
+    viewport.setAttribute('name', 'viewport');
+    head.appendChild(viewport);
+  }
+  viewport.setAttribute('content', 'width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no');
+
+  var style = document.createElement('style');
+  style.textContent = 'html,body{max-width:100%!important;overflow:hidden!important}' +
+    'img,video,canvas{max-width:100%!important;height:auto!important}';
+  head.appendChild(style);
+
+  function fit() {
+    var body = document.body;
+    if (!body) return;
+
+    body.style.transform = '';
+    body.style.transformOrigin = 'top center';
+
+    var viewportWidth = Math.max(1, window.innerWidth || root.clientWidth || 1);
+    var viewportHeight = Math.max(1, window.innerHeight || root.clientHeight || 1);
+    var width = Math.max(root.scrollWidth || 0, body.scrollWidth || 0, viewportWidth);
+    var height = Math.max(root.scrollHeight || 0, body.scrollHeight || 0, viewportHeight);
+    var scale = Math.min(1, viewportWidth / width, viewportHeight / height);
+
+    if (scale < 0.999) body.style.transform = 'scale(' + scale + ')';
+  }
+
+  fit();
+  setTimeout(fit, 80);
+  setTimeout(fit, 400);
+  window.addEventListener('resize', fit);
+})();
+"""
 
 @Composable
 fun CodexScreen(onSettings: () -> Unit) {
@@ -318,6 +375,16 @@ private fun WebArtifact(file: Docs.FileRef) {
                 factory = { WebView(it).apply {
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
+                    settings.allowFileAccess = true
+                    settings.setSupportZoom(false)
+                    settings.builtInZoomControls = false
+                    settings.displayZoomControls = false
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView, url: String?) {
+                            super.onPageFinished(view, url)
+                            view.evaluateJavascript(ARTIFACT_FIT_SCRIPT, null)
+                        }
+                    }
                     setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     loadUrl(android.net.Uri.fromFile(java.io.File(file.path)).toString())
                 } },
