@@ -22,15 +22,20 @@ import kotlinx.coroutines.withContext
 class TaskService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var wakeLock: PowerManager.WakeLock? = null
-    private var work: Job? = null
+    private val work = linkedMapOf<String, Job>()
+    private var latestStartId = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        latestStartId = startId
         val sessionId = intent?.getStringExtra("session").orEmpty()
         val text = intent?.getStringExtra("text").orEmpty().trim()
         val session = Sessions.find(sessionId)
-        if (session == null || text.isBlank()) { stopSelf(); return START_NOT_STICKY }
+        if (session == null || text.isBlank()) {
+            if (work.isEmpty()) stopSelfResult(startId)
+            return START_NOT_STICKY
+        }
 
         if (session.busy) {
             session.pending = text
@@ -38,17 +43,17 @@ class TaskService : Service() {
             if (Prefs.followUp == "interrupt") {
                 scope.launch(Dispatchers.IO) { runCatching { CodexGateway.cancel(applicationContext, session.taskId) } }
             }
+            startForegroundNow(session, work.size.coerceAtLeast(1))
             return START_NOT_STICKY
         }
-        startForegroundNow(session)
-        wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Vibecoder:task")
-            .also { it.acquire(40 * 60_000L) }
+        startForegroundNow(session, work.size + 1)
+        acquireWakeLock()
         session.busy = true
-        work = scope.launch { runSession(session, text) }
+        work[session.id] = scope.launch { runSession(session, text) }
         return START_NOT_STICKY
     }
 
-    private fun startForegroundNow(session: CodexSession) {
+    private fun startForegroundNow(session: CodexSession, activeTasks: Int) {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("tasks", "Задачи Вайбкодера", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(this, 0,
@@ -56,9 +61,16 @@ class TaskService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         startForeground(1, NotificationCompat.Builder(this, "tasks")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("Вайбкодер · Codex работает")
-            .setContentText("Нажми, чтобы открыть задачу")
+            .setContentTitle(if (activeTasks > 1) "Вайбкодер · задач: $activeTasks" else "Вайбкодер · Codex работает")
+            .setContentText(session.name)
             .setContentIntent(open).setOngoing(true).build())
+    }
+
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        wakeLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Vibecoder:task")
+            .also { it.acquire(40 * 60_000L) }
     }
 
     private suspend fun runSession(session: CodexSession, first: String) {
@@ -112,17 +124,24 @@ class TaskService : Service() {
             session.busy = false
             session.progress = ""
             Sessions.save()
-            wakeLock?.let { if (it.isHeld) it.release() }
-            wakeLock = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            work.remove(session.id)
+            if (work.isEmpty()) {
+                wakeLock?.let { if (it.isHeld) it.release() }
+                wakeLock = null
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelfResult(latestStartId)
+            } else {
+                work.keys.lastOrNull()?.let(Sessions::find)?.let { startForegroundNow(it, work.size) }
+            }
         }
     }
 
     override fun onDestroy() {
-        work?.cancel()
+        work.values.forEach { it.cancel() }
+        work.clear()
         scope.cancel()
         wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
         super.onDestroy()
     }
 }
