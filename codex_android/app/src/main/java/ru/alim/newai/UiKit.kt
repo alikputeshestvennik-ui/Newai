@@ -64,6 +64,7 @@ val icMic by lazy { lineIco("mic", "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 
 val icFile by lazy { lineIco("file", "M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7") }
 val icClip by lazy { lineIco("clip", "M21 12.5l-8.5 8.5a5 5 0 0 1-7-7L14 5.5a3.5 3.5 0 0 1 5 5L10.5 19a2 2 0 0 1-3-3L15 8.5", 1.8f) }
 val icSpark by lazy { lineIco("spark", "M12 3l1.7 4.6L18 9l-4.3 1.4L12 15l-1.7-4.6L6 9l4.3-1.4L12 3zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14z", 1.7f) }
+val icExpand by lazy { lineIco("expand", "M8 3H3v5M3 3l6 6M16 3h5v5M21 3l-6 6M8 21H3v-5M3 21l6-6M16 21h5v-5M21 21l-6-6", 1.8f) }
 
 @Composable
 fun CardBox(modifier: Modifier = Modifier, border: Color? = null, bg: Color = Card, content: @Composable ColumnScope.() -> Unit) {

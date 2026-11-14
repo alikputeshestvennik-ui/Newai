@@ -47,8 +47,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -447,10 +450,38 @@ private fun openFile(ctx: android.content.Context, file: Docs.FileRef) {
 @Composable
 private fun WebArtifact(file: Docs.FileRef) {
     val aspectRatio = remember(file.path) { artifactAspectRatio(file) }
+    var fullscreen by remember(file.path) { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val previewHeight = (maxWidth / aspectRatio).coerceIn(180.dp, 520.dp)
         androidx.compose.runtime.key(file.path) {
-            ArtifactWebView(file, Modifier.fillMaxWidth().height(previewHeight))
+            Box(Modifier.fillMaxWidth().height(previewHeight).clip(shp(12.dp))) {
+                ArtifactWebView(file, Modifier.fillMaxSize())
+                Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(40.dp).clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.62f))
+                    .clickable(onClickLabel = "Открыть на весь экран") { fullscreen = true },
+                    contentAlignment = Alignment.Center) {
+                    Icon(rememberVectorPainter(icExpand), "На весь экран", tint = Color.White,
+                        modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+    }
+    if (fullscreen) {
+        Dialog(
+            onDismissRequest = { fullscreen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        ) {
+            Surface(Modifier.fillMaxSize(), color = Color.Black) {
+                Box(Modifier.fillMaxSize()) {
+                    ArtifactWebView(file, Modifier.fillMaxSize().padding(top = 52.dp))
+                    Box(Modifier.align(Alignment.TopEnd).padding(10.dp).size(40.dp).clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.72f))
+                        .clickable(onClickLabel = "Закрыть полноэкранный просмотр") { fullscreen = false },
+                        contentAlignment = Alignment.Center) {
+                        Text("×", style = body(28, FontWeight.Light, Color.White))
+                    }
+                }
+            }
         }
     }
 }
