@@ -422,7 +422,7 @@ private fun fileBadge(name: String): String = when {
     name.endsWith(".svg", true) -> "SVG"
     name.endsWith(".zip", true) -> "ZIP"
     name.endsWith(".apk", true) -> "APK"
-    name.substringAfterLast('.', "").takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)?.take(4) ?: "FILE"
+    else -> name.substringAfterLast('.', "").takeIf { it.isNotBlank() }?.uppercase(Locale.ROOT)?.take(4) ?: "FILE"
 }
 
 private fun decodeImage(path: String, maxDimension: Int = 2048): android.graphics.Bitmap? {
