@@ -37,7 +37,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/** Небольшое окно поверх других приложений: reasoning и последний ответ. */
+/** Небольшое окно поверх других приложений: только публичный статус выполнения. */
 class CodexOverlayService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var pollJob: Job? = null
@@ -142,8 +142,10 @@ class CodexOverlayService : Service() {
             gravity = Gravity.CENTER
         }
         val title = textView(10f, Th.c.muted.toArgb(), true).apply {
-            text = "Reasoning"
+            text = "Вайбкодер · статус"
             gravity = Gravity.CENTER_VERTICAL
+            setOnClickListener { openCodex() }
+            contentDescription = "Открыть Вайбкодер"
         }
         dragBar.addView(grip, LinearLayout.LayoutParams(dp(20), dp(36)))
         dragBar.addView(title, LinearLayout.LayoutParams(0, dp(36), 1f))
@@ -159,10 +161,10 @@ class CodexOverlayService : Service() {
             addView(reasonView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         }
         reasonScroll = scroller
-        card.addView(scroller, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(96)))
+        card.addView(scroller, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(112)))
 
         val layout = WindowManager.LayoutParams(
-            dp(232), WindowManager.LayoutParams.WRAP_CONTENT,
+            dp(280), WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
@@ -348,11 +350,13 @@ class CodexOverlayService : Service() {
     }
 
     private fun render(snapshot: JSONObject) {
-        val reasoning = snapshot.optString("reasoning").trim()
+        val progress = snapshot.optString("progress").trim()
+        val answer = snapshot.optString("answer").trim()
         val error = snapshot.optString("error").trim()
         reasonView?.text = when {
             error.isNotBlank() -> error.takeLast(2400)
-            reasoning.isNotBlank() -> reasoning.takeLast(6000)
+            answer.isNotBlank() -> (if (progress.isNotBlank()) "$progress\n\n" else "") + answer.takeLast(6000)
+            progress.isNotBlank() -> progress
             else -> "…"
         }
         reasonScroll?.post { reasonScroll?.fullScroll(View.FOCUS_DOWN) }

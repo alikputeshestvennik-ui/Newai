@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -245,13 +246,16 @@ fun CodexScreen(onSettings: () -> Unit) {
             CodexRunBubble(activity)
             hint?.let { Text(it, style = body(12, color = Danger), modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) }
             if (session.attachments.isNotEmpty()) {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    session.attachments.toList().forEach { file ->
-                        PendingAttachment(file) {
-                            session.attachments.remove(file)
-                            Sessions.save()
+                Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 3.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("Вложения · ${session.attachments.size}", style = body(11, FontWeight.SemiBold, Muted))
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        session.attachments.toList().forEach { file ->
+                            PendingAttachment(file) {
+                                session.attachments.remove(file)
+                                Sessions.save()
+                            }
                         }
                     }
                 }
@@ -328,7 +332,16 @@ private fun attachFiles(ctx: android.content.Context, session: CodexSession, uri
                 if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx) else null
             }
         }.getOrNull().orEmpty().let { java.io.File(it).name }.ifBlank { "file_${System.currentTimeMillis()}" }
-        val dest = java.io.File(workspace, name)
+        // Two picked files often have the same basename (for example, two
+        // screenshots). Keep both instead of silently overwriting the first.
+        val base = name.substringBeforeLast('.', name)
+        val extension = name.substringAfterLast('.', "").takeIf { it.isNotBlank() }?.let { ".$it" }.orEmpty()
+        var dest = java.io.File(workspace, name)
+        var duplicate = 2
+        while (dest.exists()) {
+            dest = java.io.File(workspace, "$base ($duplicate)$extension")
+            duplicate++
+        }
         val mime = runCatching { ctx.contentResolver.getType(uri) }.getOrNull().orEmpty().ifBlank {
             MimeTypeMap.getSingleton().getMimeTypeFromExtension(dest.extension.lowercase())
                 ?: "application/octet-stream"
@@ -391,8 +404,14 @@ private fun MessageBubble(message: Message) {
                     MarkdownText(message.text, ink)
                 }
             }
-            message.files.filterNot { it.isGeneratedArtifact() }.forEach { file ->
-                if (message.mine) SentAttachment(file) else FileCard(file)
+            val visibleFiles = message.files.filterNot { it.isGeneratedArtifact() }
+            if (visibleFiles.isNotEmpty()) {
+                Text("Вложения · ${visibleFiles.size}", style = body(11, FontWeight.SemiBold, meta))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(visibleFiles, key = { it.path.ifBlank { it.name } }) { file ->
+                        if (message.mine) SentAttachment(file) else CompactAttachment(file, 148.dp, 104.dp, null)
+                    }
+                }
             }
             Text(hhmm.format(Date(message.ts)), style = body(11, color = meta), modifier = Modifier.align(Alignment.End))
         }

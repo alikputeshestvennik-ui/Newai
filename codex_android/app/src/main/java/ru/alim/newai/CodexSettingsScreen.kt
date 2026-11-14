@@ -228,7 +228,7 @@ private fun OverlayCard() {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text("Плавающее окно", style = body(16, FontWeight.SemiBold))
-                Text("Reasoning и последний ответ поверх других приложений.", style = body(11, color = Muted), lineHeight = 15.sp)
+                Text("Публичный статус и промежуточный ответ поверх других приложений.", style = body(11, color = Muted), lineHeight = 15.sp)
             }
             Toggle(enabled) { on ->
                 enabled = on

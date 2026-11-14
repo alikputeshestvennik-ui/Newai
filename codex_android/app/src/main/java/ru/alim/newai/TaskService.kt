@@ -106,7 +106,7 @@ class TaskService : Service() {
                     while (scope.isActive) {
                         delay(1500)
                         val snapshot = withContext(Dispatchers.IO) { runCatching { CodexGateway.status(applicationContext, session.taskId) }.getOrNull() }
-                        if (snapshot != null) session.progress = snapshot.optString("reasoning").ifBlank { snapshot.optString("status") }
+                        if (snapshot != null) session.progress = snapshot.optString("progress").ifBlank { snapshot.optString("status") }
                     }
                 }
                 try {

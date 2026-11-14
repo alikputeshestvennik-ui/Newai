@@ -65,6 +65,8 @@ class Task:
         self.finished = 0.0
         self.last_reasoning = ""
         self.last_answer = ""
+        # Public progress only. Never expose model reasoning to the client.
+        self.progress = "Подготавливаю задачу…"
         self.reasoning_items: dict[str, str] = {}
         self.answer_items: dict[str, str] = {}
         self.error = ""
@@ -134,6 +136,7 @@ class Task:
             "finished": self.finished,
             "reasoning": self.last_reasoning[-60000:],
             "answer": self.last_answer[-16000:],
+            "progress": self.progress,
             "error": self.error[-2000:],
             "tool_error": self.last_tool_error[-2000:],
             "tool_successes": self.tool_successes,
@@ -302,6 +305,8 @@ def handle_event(task: Task, event: dict) -> None:
         item_type = str(item.get("type", "")).lower()
         status = str(item.get("status", "")).lower()
         if item_type in ("command_execution", "exec_command"):
+            if kind != "item.completed":
+                task.progress = "Выполняю команду…"
             if status == "completed" and item.get("exit_code") in (None, 0):
                 task.tool_successes += 1
             elif status in ("failed", "declined") or item.get("exit_code") not in (None, 0):
@@ -321,6 +326,7 @@ def handle_event(task: Task, event: dict) -> None:
         if "reasoning" in item_type or "thought" in item_type or "plan" in item_type:
             task.record_reasoning(item_id, text)
         elif "message" in item_type or "assistant" in item_type or item_type == "agent_message":
+            task.progress = "Готовлю ответ…"
             task.record_answer(item_id, text)
     elif kind == "turn.completed":
         response = event.get("response") or {}
@@ -424,12 +430,14 @@ def handle_app_notification(task: Task, message: dict) -> str | None:
     if not isinstance(params, dict):
         params = {}
     if method == "item/reasoning/summaryTextDelta":
+        task.progress = "Проверяю задачу…"
         task.append_reasoning(str(params.get("itemId") or ""),
                               str(params.get("delta") or ""),
                               int(params.get("summaryIndex") or 0))
     elif method == "item/reasoning/textDelta":
         task.append_reasoning(str(params.get("itemId") or ""), str(params.get("delta") or ""), 99)
     elif method == "item/agentMessage/delta":
+        task.progress = "Готовлю ответ…"
         task.append_answer(str(params.get("itemId") or ""), str(params.get("delta") or ""))
     elif method == "item/completed":
         item = params.get("item")
@@ -447,6 +455,7 @@ def handle_app_notification(task: Task, message: dict) -> str | None:
             elif kind == "agentMessage":
                 task.set_answer(item_id, str(item.get("text") or ""))
             elif kind == "commandExecution":
+                task.progress = "Команда завершена, проверяю результат…"
                 status = str(item.get("status") or "").lower()
                 code = item.get("exitCode")
                 if status == "completed" and code in (None, 0):
@@ -476,6 +485,7 @@ def handle_app_notification(task: Task, message: dict) -> str | None:
                         task.last_answer = text[-16000:]
                     break
         if status == "completed":
+            task.progress = "Завершаю задачу…"
             return "completed"
         if status == "interrupted":
             return "interrupted"
@@ -735,7 +745,11 @@ def codex_runtime_config(env: dict[str, str]) -> list[str]:
             f"shell={json.dumps(shell_path)}. Never use a login shell. "
             "GitHub CLI gh is installed and authenticated through GH_TOKEN; use it for repository, PR and issue operations. "
             "Use the embedded Python, Git and ripgrep from the inherited PATH; "
-            "work in the supplied workspace unless the user explicitly asks to clone another repository."
+            "work in the supplied workspace unless the user explicitly asks to clone another repository. "
+            "For Android work, inspect Gradle files and use ./gradlew test, ./gradlew lint, "
+            "and ./gradlew assembleDebug or the project's documented tasks when available. "
+            "Use adb/logcat only when the executable and a device are actually available; "
+            "do not claim an emulator or device test without evidence."
         )
         options += ["-c", "developer_instructions=" + json.dumps(instructions)]
     return options

@@ -60,7 +60,7 @@ import kotlinx.coroutines.withContext
 
 data class CodexActivity(
     val running: Boolean = false,
-    val reasoning: String = "",
+    val progress: String = "",
     val answer: String = "",
 )
 
@@ -79,7 +79,7 @@ fun rememberCodexActivity(session: CodexSession): CodexActivity {
             if (snapshot != null) {
                 state = CodexActivity(
                     running = snapshot.optString("status") in setOf("queued", "running"),
-                    reasoning = snapshot.optString("reasoning").trim(),
+                    progress = snapshot.optString("progress").trim(),
                     answer = snapshot.optString("answer").trim(),
                 )
             }
@@ -276,7 +276,7 @@ fun CodexKeyboardBar(session: CodexSession) {
 
 private fun Boolean?.orFalse() = this == true
 
-/** Прозрачный баббл над полем ввода: только пока задача реально идёт. */
+/** Прозрачный баббл над полем ввода: публичный статус и поток ответа без reasoning. */
 @Composable
 fun CodexRunBubble(activity: CodexActivity) {
     AnimatedVisibility(
@@ -284,9 +284,9 @@ fun CodexRunBubble(activity: CodexActivity) {
         enter = fadeIn(tween(180)) + expandVertically(tween(180)),
         exit = fadeOut(tween(140)) + shrinkVertically(tween(140)),
     ) {
-        val reasoningScroll = rememberScrollState()
-        LaunchedEffect(activity.reasoning) {
-            if (activity.reasoning.isNotBlank()) reasoningScroll.animateScrollTo(reasoningScroll.maxValue)
+        val answerScroll = rememberScrollState()
+        LaunchedEffect(activity.answer) {
+            if (activity.answer.isNotBlank()) answerScroll.animateScrollTo(answerScroll.maxValue)
         }
         Column(
             Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(shp(12.dp))
@@ -295,16 +295,16 @@ fun CodexRunBubble(activity: CodexActivity) {
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ThinkDots()
-                Text("Вайбкодер думает", style = body(11, FontWeight.SemiBold, Teal))
+                Text(activity.progress.ifBlank { "Вайбкодер работает…" }, style = body(11, FontWeight.SemiBold, Teal))
             }
-            if (activity.reasoning.isBlank()) {
-                Text("Codex обдумывает задачу…", style = body(13, color = Muted), lineHeight = 18.sp)
-            } else {
+            if (activity.answer.isNotBlank()) {
                 Column(
-                    Modifier.fillMaxWidth().heightIn(max = 260.dp).verticalScroll(reasoningScroll),
+                    Modifier.fillMaxWidth().heightIn(max = 260.dp).verticalScroll(answerScroll),
                 ) {
-                    Text(activity.reasoning, style = body(13, color = Ink), lineHeight = 18.sp)
+                    Text(activity.answer, style = body(13, color = Ink), lineHeight = 18.sp)
                 }
+            } else {
+                Text("Модель выполняет задачу…", style = body(13, color = Muted), lineHeight = 18.sp)
             }
         }
     }
