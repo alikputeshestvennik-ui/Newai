@@ -71,9 +71,29 @@ internal object ChatGptAccount {
         }
         return value("access")
     }
+    // A different task may already have refreshed the account while this one ran.
+    @Synchronized fun expireIfCurrent(token: String) {
+        if (value("access") == token) prefs.edit().putLong("expiry", 0).commit()
+    }
     fun refreshModels() {
         val ids = ChatGptResponses.models(access(), accountId).map { it.id }
         prefs.edit().putString("models", ids.joinToString("\n")).commit()
+    }
+    fun usage(): ChatGptUsage.Limits {
+        fun request(accessToken: String): Pair<Int, String> {
+            val builder = Request.Builder().url("https://chatgpt.com/backend-api/wham/usage")
+                .header("Authorization", "Bearer $accessToken")
+            if (accountId.isNotBlank()) builder.header("chatgpt-account-id", accountId)
+            return http.newCall(builder.build()).execute().use { it.code to it.body?.string().orEmpty() }
+        }
+        val current = access()
+        var response = request(current)
+        if (response.first == 401) {
+            expireIfCurrent(current)
+            response = request(access())
+        }
+        check(response.first in 200..299) { "Не удалось получить лимиты ChatGPT (${response.first})" }
+        return ChatGptUsage.parse(response.second)
     }
     fun cancel() { listener?.close() }
 

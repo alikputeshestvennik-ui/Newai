@@ -175,7 +175,15 @@ object CodexGateway {
                 val snapshot = status(ctx, jobId)
                 when (snapshot.optString("status")) {
                     "done" -> return answerFrom(ctx, snapshot)
-                    "failed", "timeout" -> error(snapshot.optString("error").ifBlank { "Локальный Codex завершился с ошибкой" })
+                    "failed", "timeout" -> {
+                        val reason = snapshot.optString("error").ifBlank { "Локальный Codex завершился с ошибкой" }
+                        if (kind == Providers.CHATGPT && (reason.contains("token_expired", ignoreCase = true) ||
+                                reason.contains("authentication token is expired", ignoreCase = true))) {
+                            ChatGptAccount.expireIfCurrent(providerToken)
+                            error("Срок действия сессии ChatGPT истёк во время задачи. Отправь «продолжи»: приложение обновит сессию. Если обновление не удастся, войди в ChatGPT заново в настройках.")
+                        }
+                        error(reason)
+                    }
                     "cancelled" -> error("Задача остановлена")
                 }
                 failures = 0

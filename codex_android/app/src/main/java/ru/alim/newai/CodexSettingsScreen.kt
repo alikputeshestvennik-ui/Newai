@@ -53,6 +53,8 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun CodexSettingsScreen(back: () -> Unit) {
@@ -335,6 +337,9 @@ private fun ChatGptCard() {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
+    var limits by remember { mutableStateOf<ChatGptUsage.Limits?>(null) }
+    var loadingLimits by remember { mutableStateOf(false) }
+    var limitsError by remember { mutableStateOf("") }
     CardBox {
         Text("ChatGPT", style = body(16, FontWeight.SemiBold))
         Text(if (ChatGptAccount.connected) "Подключён${if (ChatGptAccount.email.isBlank()) "" else " · ${ChatGptAccount.email}"}"
@@ -355,11 +360,44 @@ private fun ChatGptCard() {
             }, modifier = Modifier.weight(1f))
             TextButton({ scope.launch {
                 status = withContext(Dispatchers.IO) { ChatGptAccount.signOut() }
-            } }) { Text("Выйти", color = Muted) }
+                limits = null
+                limitsError = ""
+            } }, enabled = !loadingLimits) { Text("Выйти", color = Muted) }
         }
         Text("Моделей ChatGPT: ${Providers.models("codex").size}", style = body(11, color = Muted))
+        if (ChatGptAccount.connected) {
+            TextButton(onClick = {
+                scope.launch {
+                    loadingLimits = true
+                    limitsError = ""
+                    limits = null
+                    try {
+                        limits = withContext(Dispatchers.IO) { ChatGptAccount.usage() }
+                    } catch (e: Exception) {
+                        limitsError = e.message ?: "Не удалось получить лимиты ChatGPT"
+                    } finally { loadingLimits = false }
+                }
+            }, enabled = !loadingLimits && !busy) {
+                Text(if (loadingLimits) "Загружаем лимиты…" else "Показать лимиты подписки", color = Teal)
+            }
+            limits?.let {
+                UsageWindow("5 часов", it.fiveHours)
+                UsageWindow("Неделя", it.week)
+            }
+            if (limitsError.isNotBlank()) Text(limitsError, style = body(11, color = Danger))
+        }
         if (status.isNotBlank()) Text(status, style = body(11, color = Muted), lineHeight = 15.sp)
     }
+}
+
+@Composable
+private fun UsageWindow(title: String, window: ChatGptUsage.Window?) {
+    val reset = window?.resetAt?.let {
+        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it * 1000))
+    }
+    Text(if (window == null) "$title: нет данных" else
+        "$title: использовано ${window.usedPercent}%${if (reset != null) " · обновление $reset" else ""}",
+        style = body(12, color = Muted), lineHeight = 17.sp)
 }
 
 @Composable
