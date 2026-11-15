@@ -336,7 +336,7 @@ def handle_event(task: Task, event: dict) -> None:
                 task.last_answer = output[-16000:]
 
 
-def run_process(task: Task, command: list[str], prompt: str, env: dict, output: Path, timeout: int) -> subprocess.CompletedProcess:
+def run_process(task: Task, command: list[str], prompt: str, env: dict, output: Path, timeout: int | None) -> subprocess.CompletedProcess:
     process = subprocess.Popen(
         command,
         stdin=subprocess.PIPE,
@@ -502,7 +502,7 @@ def handle_app_notification(task: Task, message: dict) -> str | None:
 
 def run_app_server(task: Task, options: list[str], model_id: str, model_provider: str | None,
                    workspace: Path, prompt: str, env: dict[str, str],
-                   timeout: int) -> subprocess.CompletedProcess:
+                   timeout: int | None) -> subprocess.CompletedProcess:
     """Drive one Codex turn through ``codex app-server``.
 
     Unlike ``codex exec --json`` (which only reports a reasoning item once it is
@@ -558,13 +558,13 @@ def run_app_server(task: Task, options: list[str], model_id: str, model_provider
         except (BrokenPipeError, OSError) as exc:
             raise AppServerUnavailable(stderr_text() or str(exc)) from exc
 
-    def receive(deadline: float, fallback: bool) -> dict:
+    def receive(deadline: float | None, fallback: bool) -> dict:
         while True:
-            remaining = deadline - time.time()
-            if remaining <= 0:
+            remaining = deadline - time.time() if deadline is not None else None
+            if remaining is not None and remaining <= 0:
                 raise subprocess.TimeoutExpired(command, timeout)
             try:
-                line = stream.get(timeout=min(0.5, remaining))
+                line = stream.get(timeout=min(0.5, remaining) if remaining is not None else 0.5)
             except queue.Empty:
                 if process.poll() is not None and stream.empty():
                     if process.returncode == -signal.SIGKILL:
@@ -629,7 +629,7 @@ def run_app_server(task: Task, options: list[str], model_id: str, model_provider
         turn_request = next_id()
         send({"jsonrpc": "2.0", "id": turn_request, "method": "turn/start",
               "params": {"threadId": thread_id, "input": [{"type": "text", "text": prompt}]}})
-        deadline = time.time() + timeout
+        deadline = time.time() + timeout if timeout is not None else None
         while True:
             message = receive(deadline, False)
             if message.get("id") == turn_request:
@@ -829,12 +829,12 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
                 workspace,
                 goal,
                 env,
-                1200,
+                None,
             )
         except AppServerStopped:
             return 409, {"error": "Задача остановлена", "task_id": task.id}
         except AppServerUnavailable:
-            result = run_process(task, command, goal, env, output, 1200)
+            result = run_process(task, command, goal, env, output, None)
         diagnostic = result.stderr or ""
         if "error building bubblewrap command" in diagnostic or "cannot establish app-server socket mount isolation" in diagnostic:
             message = "Локальная песочница Codex несовместима с окружением телефона. Выполнение команд не подтверждено."

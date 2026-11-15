@@ -169,9 +169,8 @@ object CodexGateway {
 
         val started = begin(ctx, token, body, taskId)
         val jobId = started.optString("task_id").ifBlank { taskId }
-        val deadline = System.currentTimeMillis() + 21 * 60_000
         var failures = 0
-        while (System.currentTimeMillis() < deadline) {
+        while (true) {
             try {
                 val snapshot = status(ctx, jobId)
                 when (snapshot.optString("status")) {
@@ -198,6 +197,5 @@ object CodexGateway {
             }
             Thread.sleep(if (failures == 0) 700 else 1500)
         }
-        error("Время задачи истекло")
     }
 }
