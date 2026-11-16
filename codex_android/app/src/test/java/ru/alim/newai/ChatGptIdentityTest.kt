@@ -10,6 +10,12 @@ import java.security.interfaces.RSAPublicKey
 import java.util.Base64
 
 class ChatGptIdentityTest {
+    @Test fun comparesAvailableEmailsAcrossClients() {
+        assertTrue(ChatGptIdentity.compatibleEmails("User@example.com", " user@example.com "))
+        assertFalse(ChatGptIdentity.compatibleEmails("user@example.com", "other@example.com"))
+        assertTrue(ChatGptIdentity.compatibleEmails("", "user@example.com"))
+        assertTrue(ChatGptIdentity.compatibleEmails("user@example.com", ""))
+    }
     private val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
     private fun enc(b: ByteArray) = Base64.getUrlEncoder().withoutPadding().encodeToString(b)
     private val jwks: JSONObject get() {

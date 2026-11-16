@@ -11,6 +11,9 @@ import java.security.spec.RSAPublicKeySpec
 
 /** Pure OAuth/OIDC checks. No credentials are logged or accepted without verification. */
 internal object ChatGptIdentity {
+    // OIDC subjects can be client-specific, so they cannot identify a user across OAuth clients.
+    fun compatibleEmails(first: String, second: String): Boolean =
+        first.isBlank() || second.isBlank() || first.trim().equals(second.trim(), ignoreCase = true)
     fun random(): String = encode(ByteArray(32).also { SecureRandom().nextBytes(it) })
     fun challenge(verifier: String): String = encode(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII)))
     private fun encode(bytes: ByteArray) = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)

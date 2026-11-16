@@ -175,7 +175,7 @@ internal object ChatGptAccount {
                     .add("code", result.getQueryParameter("code") ?: error("Нет кода входа"))
                     .add("code_verifier", verifier).add("redirect_uri", redirect).build())
                 val claims = ChatGptIdentity.validate(t.getString("id_token"), CODEX_CLIENT, nonce, fetch("https://auth.openai.com/.well-known/jwks.json"))
-                require(value("subject").isBlank() || value("subject") == claims.getString("sub")) { "Выбран другой аккаунт ChatGPT" }
+                require(ChatGptIdentity.compatibleEmails(value("email"), claims.optString("email"))) { "Адрес аккаунта лимитов отличается от адреса аккаунта ChatGPT" }
                 val account = claims.optJSONObject("https://api.openai.com/auth")?.optString("chatgpt_account_id").orEmpty()
                 synchronized(this@ChatGptAccount) { saveUsage(t, account) }
                 status = "Лимиты подключены"
