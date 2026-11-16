@@ -75,6 +75,7 @@ class Task:
         self.tool_failures = 0
         self.returncode: int | None = None
         self.files: list[dict] = []
+        self.usage: dict | None = None
         self.lock = threading.Lock()
 
     def _refresh_reasoning(self) -> None:
@@ -143,6 +144,7 @@ class Task:
             "tool_failures": self.tool_failures,
             "returncode": self.returncode,
             "files": self.files,
+            "usage": self.usage,
         }
 
 
@@ -286,6 +288,21 @@ def _tool_error_text(item: dict) -> str:
     return ": ".join(pieces)
 
 
+def normalize_usage(value: object) -> dict | None:
+    if not isinstance(value, dict):
+        return None
+    def number(*keys):
+        for key in keys:
+            v = value.get(key)
+            if isinstance(v, int) and not isinstance(v, bool) and v >= 0:
+                return v
+        return None
+    result = {"input": number("input_tokens", "inputTokens"),
+              "output": number("output_tokens", "outputTokens"),
+              "cached": number("cached_input_tokens", "cachedInputTokens")}
+    return result if any(v is not None for v in result.values()) else None
+
+
 def handle_event(task: Task, event: dict) -> None:
     kind = event.get("type", "")
     if kind in ("error", "turn.failed"):
@@ -329,6 +346,7 @@ def handle_event(task: Task, event: dict) -> None:
             task.progress = "Готовлю ответ…"
             task.record_answer(item_id, text)
     elif kind == "turn.completed":
+        task.usage = normalize_usage(event.get("usage"))
         response = event.get("response") or {}
         if isinstance(response, dict):
             output = _reasoning_text(response)
@@ -429,7 +447,11 @@ def handle_app_notification(task: Task, message: dict) -> str | None:
     params = message.get("params")
     if not isinstance(params, dict):
         params = {}
-    if method == "item/reasoning/summaryTextDelta":
+    if method == "thread/tokenUsage/updated":
+        usage = params.get("tokenUsage")
+        if isinstance(usage, dict):
+            task.usage = normalize_usage(usage.get("total")) or task.usage
+    elif method == "item/reasoning/summaryTextDelta":
         task.progress = "Проверяю задачу…"
         task.append_reasoning(str(params.get("itemId") or ""),
                               str(params.get("delta") or ""),

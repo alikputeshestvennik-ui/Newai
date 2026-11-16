@@ -244,6 +244,7 @@ fun CodexScreen(onSettings: () -> Unit) {
             }
             CodexRunBubble(activity)
             hint?.let { Text(it, style = body(12, color = Danger), modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) }
+            if (composerFocused) CodexKeyboardBar(session)
             if (session.attachments.isNotEmpty()) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 3.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -259,7 +260,6 @@ fun CodexScreen(onSettings: () -> Unit) {
                     }
                 }
             }
-            if (composerFocused) CodexKeyboardBar(session)
             Box(Modifier.fillMaxWidth().heightIn(min = 46.dp)) {
                 Row(Modifier.fillMaxWidth().padding(end = 56.dp).heightIn(min = 48.dp).clip(shp(24.dp))
                     .background(Card).border(1.dp, Line, shp(24.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
@@ -403,6 +403,18 @@ private fun MessageBubble(message: Message) {
         }
         return
     }
+    var showUsage by remember { mutableStateOf(false) }
+    if (showUsage) {
+        val usage = message.usage
+        fun count(value: Long?) = value?.let { java.text.NumberFormat.getIntegerInstance().format(it) } ?: "Нет данных"
+        AlertDialog(onDismissRequest = { showUsage = false }, title = { Text("Использовано токенов") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Вход: ${count(usage?.input)}")
+                Text("Выход: ${count(usage?.output)}")
+                Text("Из кэша: ${count(usage?.cached)}")
+                Text("Токены из кэша входят в число входных.", style = body(12, color = Muted))
+            } }, confirmButton = { TextButton(onClick = { showUsage = false }) { Text("Закрыть") } })
+    }
     val shape = if (message.mine) shp(20.dp, 20.dp, 6.dp, 20.dp) else shp(20.dp, 20.dp, 20.dp, 6.dp)
     val bubble = if (message.mine) Th.c.outBubble else Th.c.inBubble
     val ink = if (message.mine) Th.c.outInk else Th.c.ink
@@ -425,7 +437,11 @@ private fun MessageBubble(message: Message) {
                 }
             }
             val timeLabel = message.durationMs?.let { "Работал ${formatWorkDuration(it)} · " }.orEmpty() + hhmm.format(Date(message.ts))
-            Text(timeLabel, style = body(11, color = meta), modifier = Modifier.align(Alignment.End))
+            Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (!message.mine) Text("Использовано", style = body(11, FontWeight.SemiBold, Teal),
+                    modifier = Modifier.clip(shp(8.dp)).clickable { showUsage = true }.padding(4.dp))
+                Text(timeLabel, style = body(11, color = meta))
+            }
         }
     }
 }

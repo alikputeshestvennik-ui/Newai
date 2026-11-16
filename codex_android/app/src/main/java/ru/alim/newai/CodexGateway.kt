@@ -87,7 +87,7 @@ object CodexGateway {
             check(response.isSuccessful) { "Не удалось остановить задачу" }
         }
     }
-    data class Result(val text: String, val files: List<Docs.FileRef>)
+    data class Result(val text: String, val files: List<Docs.FileRef>, val usage: TokenUsage?)
 
     private fun parseFiles(ctx: Context, array: org.json.JSONArray?): List<Docs.FileRef> {
         val root = ctx.filesDir.canonicalFile
@@ -107,7 +107,7 @@ object CodexGateway {
     fun answerFrom(ctx: Context, snapshot: JSONObject): Result {
         val answer = snapshot.optString("answer").ifBlank { snapshot.optString("result") }.trim()
         if (answer.isBlank()) error("Codex не вернул текстовый результат")
-        return Result(answer, parseFiles(ctx, snapshot.optJSONArray("files")))
+        return Result(answer, parseFiles(ctx, snapshot.optJSONArray("files")), TokenUsage.fromJson(snapshot.optJSONObject("usage")))
     }
 
     private fun begin(ctx: Context, token: String, body: JSONObject, taskId: String): JSONObject {

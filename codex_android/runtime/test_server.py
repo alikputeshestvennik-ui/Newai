@@ -205,6 +205,16 @@ class BridgeTest(unittest.TestCase):
         self.assertIn("Сначала проверю", task.last_reasoning)
         self.assertIn("Второй блок", task.last_reasoning)
 
+    def test_token_usage_is_reported_for_both_protocols(self):
+        task = self.bridge.Task("usage")
+        self.bridge.handle_app_notification(task, {"method": "thread/tokenUsage/updated", "params": {
+            "tokenUsage": {"total": {"inputTokens": 120, "cachedInputTokens": 40, "outputTokens": 15}}}})
+        self.assertEqual({"input": 120, "cached": 40, "output": 15}, task.snapshot()["usage"])
+        self.bridge.handle_event(task, {"type": "turn.completed", "usage": {
+            "input_tokens": 50, "cached_input_tokens": 20, "output_tokens": 7}})
+        self.assertEqual({"input": 50, "cached": 20, "output": 7}, task.snapshot()["usage"])
+        self.assertIsNone(self.bridge.normalize_usage({}))
+
     def test_app_server_turn_completed_returns_final_answer(self):
         task = self.bridge.Task("reason-done")
         outcome = self.bridge.handle_app_notification(task, {

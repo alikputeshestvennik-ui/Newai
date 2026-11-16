@@ -107,6 +107,17 @@ object AppNav {
     }
 }
 
+data class TokenUsage(val input: Long?, val output: Long?, val cached: Long?) {
+    fun toJson() = JSONObject().put("input", input).put("output", output).put("cached", cached)
+    companion object {
+        fun fromJson(json: JSONObject?): TokenUsage? {
+            if (json == null) return null
+            fun value(key: String): Long? = if (json.has(key) && !json.isNull(key)) json.optLong(key) else null
+            return TokenUsage(value("input"), value("output"), value("cached"))
+        }
+    }
+}
+
 data class Message(
     val id: String = UUID.randomUUID().toString(),
     val role: String,
@@ -114,6 +125,7 @@ data class Message(
     val files: List<Docs.FileRef> = emptyList(),
     val ts: Long = System.currentTimeMillis(),
     val durationMs: Long? = null,
+    val usage: TokenUsage? = null,
 ) {
     val mine: Boolean get() = role == "me"
     val system: Boolean get() = role == "system"
@@ -176,6 +188,7 @@ object Sessions {
                         text = m.optString("text", ""),
                         files = Docs.fromJson(m.optJSONArray("files")),
                         ts = m.optLong("ts", System.currentTimeMillis()),
+                        usage = TokenUsage.fromJson(m.optJSONObject("usage")),
                         durationMs = if (m.has("duration_ms") && !m.isNull("duration_ms")) m.optLong("duration_ms") else null,
                     )
                 }
@@ -234,7 +247,7 @@ object Sessions {
             val messages = JSONArray()
             session.messages.forEach { m ->
                 messages.put(JSONObject().put("id", m.id).put("role", m.role).put("text", m.text)
-                    .put("ts", m.ts).put("duration_ms", m.durationMs).put("files", Docs.toJson(m.files)))
+                    .put("ts", m.ts).put("duration_ms", m.durationMs).put("usage", m.usage?.toJson()).put("files", Docs.toJson(m.files)))
             }
             array.put(JSONObject().put("id", session.id).put("name", session.name).put("task_id", session.taskId)
                 .put("created", session.created).put("draft", session.draft).put("provider", session.providerId)

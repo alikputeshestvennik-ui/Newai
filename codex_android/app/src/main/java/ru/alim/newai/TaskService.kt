@@ -117,7 +117,7 @@ class TaskService : Service() {
                             session.reasoningEffort.ifBlank { "medium" })
                     }
                     session.messages += Message(role = "codex", text = answer.text, files = answer.files,
-                        durationMs = android.os.SystemClock.elapsedRealtime() - startedAt)
+                        durationMs = android.os.SystemClock.elapsedRealtime() - startedAt, usage = answer.usage)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
