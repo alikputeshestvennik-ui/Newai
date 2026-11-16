@@ -372,13 +372,14 @@ private fun ChatGptCard() {
                     limitsError = ""
                     limits = null
                     try {
+                        if (!ChatGptAccount.usageConnected) ChatGptAccount.signIn(ctx, forUsage = true)
                         limits = withContext(Dispatchers.IO) { ChatGptAccount.usage() }
                     } catch (e: Exception) {
                         limitsError = e.message ?: "Не удалось получить лимиты ChatGPT"
                     } finally { loadingLimits = false }
                 }
             }, enabled = !loadingLimits && !busy) {
-                Text(if (loadingLimits) "Загружаем лимиты…" else "Показать лимиты подписки", color = Teal)
+                Text(if (loadingLimits) "Загружаем лимиты…" else if (ChatGptAccount.usageConnected) "Показать лимиты подписки" else "Подключить и показать лимиты", color = Teal)
             }
             limits?.let {
                 UsageWindow("5 часов", it.fiveHours)

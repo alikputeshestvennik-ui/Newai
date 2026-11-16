@@ -38,6 +38,8 @@ internal object ChatGptAccount {
         it == "chatgpt.tokens.use.direct" || it == "resource.invoke"
     }
     val accountId get() = value("account").ifBlank { value("subject") }
+    val usageConnected get() = ::prefs.isInitialized && value("usage_access").isNotBlank()
+    private const val CODEX_CLIENT = "app_EMoamEEZ73f0CkXaXp7hrann"
     val busy get() = listener != null
     val models: List<String> get() = if (!::prefs.isInitialized || !allowed) emptyList() else value("models").lines().filter { it.isNotBlank() }.map { "chatgpt:$it" }
 
@@ -79,34 +81,65 @@ internal object ChatGptAccount {
         val ids = ChatGptResponses.models(access(), accountId).map { it.id }
         prefs.edit().putString("models", ids.joinToString("\n")).commit()
     }
+    @Synchronized private fun usageAccess(): String {
+        check(usageConnected) { "Подключи лимиты ChatGPT" }
+        if (prefs.getLong("usage_expiry", 0) < System.currentTimeMillis() + 60_000) {
+            val refresh = value("usage_refresh")
+            check(refresh.isNotBlank()) { "Подключи лимиты ChatGPT снова" }
+            saveUsage(codexToken(FormBody.Builder().add("grant_type", "refresh_token")
+                .add("client_id", CODEX_CLIENT).add("refresh_token", refresh).build()))
+        }
+        return value("usage_access")
+    }
+    private fun codexToken(form: FormBody): JSONObject = http.newCall(Request.Builder()
+        .url("https://auth.openai.com/oauth/token").post(form).build()).execute().use {
+        check(it.isSuccessful) { "Не удалось подключить лимиты ChatGPT (${it.code})" }
+        JSONObject(it.body?.string() ?: error("Пустой ответ OpenAI"))
+    }
+    private fun saveUsage(t: JSONObject, account: String? = null) {
+        require(t.optString("access_token").isNotBlank() && t.optString("token_type").equals("Bearer", true))
+        val edit = prefs.edit().putString("usage_access", t.getString("access_token"))
+            .putLong("usage_expiry", System.currentTimeMillis() + t.getLong("expires_in") * 1000)
+        if (t.has("refresh_token")) edit.putString("usage_refresh", t.getString("refresh_token"))
+        if (account != null) edit.putString("usage_account", account)
+        check(edit.commit()) { "Не удалось сохранить подключение лимитов" }
+    }
     fun usage(): ChatGptUsage.Limits {
         fun request(accessToken: String): Pair<Int, String> {
             val builder = Request.Builder().url("https://chatgpt.com/backend-api/wham/usage")
                 .header("Authorization", "Bearer $accessToken")
-            if (accountId.isNotBlank()) builder.header("chatgpt-account-id", accountId)
+            if (value("usage_account").isNotBlank()) builder.header("chatgpt-account-id", value("usage_account"))
             return http.newCall(builder.build()).execute().use { it.code to it.body?.string().orEmpty() }
         }
-        val current = access()
+        val current = usageAccess()
         var response = request(current)
         if (response.first == 401) {
-            expireIfCurrent(current)
-            response = request(access())
+            synchronized(this) { if (value("usage_access") == current) prefs.edit().putLong("usage_expiry", 0).commit() }
+            response = request(usageAccess())
         }
         check(response.first in 200..299) { "Не удалось получить лимиты ChatGPT (${response.first})" }
         return ChatGptUsage.parse(response.second)
     }
     fun cancel() { listener?.close() }
 
-    suspend fun signIn(ctx: Context) = withContext(Dispatchers.IO) {
+    suspend fun signIn(ctx: Context, forUsage: Boolean = false) = withContext(Dispatchers.IO) {
         init(ctx.applicationContext)
         check(!busy) { "Вход уже открыт" }
-        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val server = ServerSocket(if (forUsage) 1455 else 0, 1, InetAddress.getByName("127.0.0.1"))
         listener = server
         val state = ChatGptIdentity.random(); val nonce = ChatGptIdentity.random(); val verifier = ChatGptIdentity.random()
         val redirect = "http://127.0.0.1:${server.localPort}/auth/callback"
         val client = value("client")
         try {
-            val uri = Uri.parse("https://auth.openai.com/api/accounts/authorize").buildUpon()
+            val uri = if (forUsage) Uri.parse("https://auth.openai.com/oauth/authorize").buildUpon()
+                .appendQueryParameter("client_id", CODEX_CLIENT)
+                .appendQueryParameter("response_type", "code").appendQueryParameter("redirect_uri", redirect)
+                .appendQueryParameter("scope", "openid profile email offline_access api.connectors.read api.connectors.invoke")
+                .appendQueryParameter("state", state).appendQueryParameter("nonce", nonce)
+                .appendQueryParameter("code_challenge_method", "S256").appendQueryParameter("code_challenge", ChatGptIdentity.challenge(verifier))
+                .appendQueryParameter("id_token_add_organizations", "true")
+                .appendQueryParameter("codex_cli_simplified_flow", "true").appendQueryParameter("originator", "codex_cli_rs")
+            else Uri.parse("https://auth.openai.com/api/accounts/authorize").buildUpon()
                 .appendQueryParameter("client_id", client.ifBlank { "dynamic_agent_client" })
                 .appendQueryParameter("ext_agent_host_id", value("host"))
                 .appendQueryParameter("response_type", "code").appendQueryParameter("redirect_uri", redirect)
@@ -114,9 +147,9 @@ internal object ChatGptAccount {
                 .appendQueryParameter("resource", "https://api.openai.com/v1")
                 .appendQueryParameter("state", state).appendQueryParameter("nonce", nonce)
                 .appendQueryParameter("code_challenge_method", "S256").appendQueryParameter("code_challenge", ChatGptIdentity.challenge(verifier))
-            if (client.isBlank()) uri.appendQueryParameter("agent_name_hint", "Vibecoder")
-            else if (value("id").isNotBlank()) uri.appendQueryParameter("id_token_hint", value("id"))
-            if (connected && !allowed) uri.appendQueryParameter("prompt", "consent")
+            if (!forUsage && client.isBlank()) uri.appendQueryParameter("agent_name_hint", "Vibecoder")
+            else if (!forUsage && value("id").isNotBlank()) uri.appendQueryParameter("id_token_hint", value("id"))
+            if (!forUsage && connected && !allowed) uri.appendQueryParameter("prompt", "consent")
             withContext(Dispatchers.Main) { ctx.startActivity(Intent(Intent.ACTION_VIEW, uri.build()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             status = "Заверши вход в браузере и вернись в Вайбкодер"
             val deadline = System.currentTimeMillis() + 300_000
@@ -137,6 +170,17 @@ internal object ChatGptAccount {
             val result = callback ?: error("Время входа истекло")
             require(result.getQueryParameter("iss").let { it == null || it == "https://auth.openai.com" }) { "Неверный сервер авторизации" }
             check(result.getQueryParameter("error") == null) { "Вход отменён" }
+            if (forUsage) {
+                val t = codexToken(FormBody.Builder().add("grant_type", "authorization_code").add("client_id", CODEX_CLIENT)
+                    .add("code", result.getQueryParameter("code") ?: error("Нет кода входа"))
+                    .add("code_verifier", verifier).add("redirect_uri", redirect).build())
+                val claims = ChatGptIdentity.validate(t.getString("id_token"), CODEX_CLIENT, nonce, fetch("https://auth.openai.com/.well-known/jwks.json"))
+                require(value("subject").isBlank() || value("subject") == claims.getString("sub")) { "Выбран другой аккаунт ChatGPT" }
+                val account = claims.optJSONObject("https://api.openai.com/auth")?.optString("chatgpt_account_id").orEmpty()
+                synchronized(this@ChatGptAccount) { saveUsage(t, account) }
+                status = "Лимиты подключены"
+                return@withContext
+            }
             val issued = result.getQueryParameter("client_id") ?: client
             require(issued.isNotBlank() && issued != "dynamic_agent_client" && (client.isBlank() || client == issued)) { "Неверная регистрация приложения" }
             prefs.edit().putString("client", issued).commit()
@@ -167,7 +211,7 @@ internal object ChatGptAccount {
         } catch (_: java.io.IOException) {
             revoked = false
         } finally {
-            prefs.edit().remove("access").remove("refresh").remove("id").remove("scope").remove("models").remove("expiry").commit()
+            prefs.edit().remove("access").remove("refresh").remove("id").remove("scope").remove("models").remove("expiry").remove("usage_access").remove("usage_refresh").remove("usage_expiry").remove("usage_account").remove("subject").remove("email").remove("account").commit()
         }
         return if (revoked) "Отключено" else "Вышли на телефоне. Отзыв сессии не подтверждён — отключи Vibecoder в настройках ChatGPT."
     }
