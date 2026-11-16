@@ -98,7 +98,7 @@ private fun CodexBarButton(icon: ImageVector, label: String, size: Int = 40, onC
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CodexTopBar(session: CodexSession, running: Boolean, onSettings: () -> Unit, onDelete: () -> Unit) {
+fun CodexTopBar(session: CodexSession, onSettings: () -> Unit, onDelete: () -> Unit) {
     val chats = Sessions.list
     val strip = rememberLazyListState()
     var renameTarget by remember { mutableStateOf<CodexSession?>(null) }
@@ -140,9 +140,6 @@ fun CodexTopBar(session: CodexSession, running: Boolean, onSettings: () -> Unit,
             item(key = "new-chat") {
                 CodexBarButton(icPlus, "Новый диалог", 32) { Sessions.new() }
             }
-        }
-        if (running) CodexBarButton(icStop, "Остановить Codex", 36) {
-            AppNav.stop(session)
         }
         CodexBarButton(icGear, "Настройки Вайбкодера", onClick = onSettings)
         CodexBarButton(icTrash, "Удалить диалог", onClick = onDelete)

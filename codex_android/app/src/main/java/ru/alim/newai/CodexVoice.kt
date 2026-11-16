@@ -139,7 +139,7 @@ internal class CodexVoiceSession {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun CodexVoiceInput(onText: (String) -> Unit) {
+internal fun CodexVoiceInput(showStop: Boolean, onClick: () -> Unit, onText: (String) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -151,7 +151,7 @@ internal fun CodexVoiceInput(onText: (String) -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var level by remember { mutableFloatStateOf(0f) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        error = if (it) "Теперь удерживай микрофон" else "Разреши доступ к микрофону"
+        error = if (it) "Теперь удерживай кнопку для записи" else "Разреши доступ к микрофону"
     }
     fun cancel() { session?.cancel(); job?.cancel(); listening = false }
     DisposableEffect(lifecycle) {
@@ -187,9 +187,9 @@ internal fun CodexVoiceInput(onText: (String) -> Unit) {
                 }
             }
         }
-        Box(Modifier.size(48.dp).background(Color(0xFF87CEEB), CircleShape).combinedClickable(
-            onClickLabel = "Голосовой ввод: удерживай для записи",
-            onClick = { if (listening) { session?.stop = true; listening = false } else if (!busy) error = "Удерживай микрофон и говори" },
+        Box(Modifier.size(48.dp).background(Teal, CircleShape).combinedClickable(
+            onClickLabel = if (showStop) "Остановить Codex" else "Отправить",
+            onClick = onClick,
             onLongClickLabel = "Начать диктовку",
             onLongClick = {
                 if (!busy) {
@@ -211,6 +211,9 @@ internal fun CodexVoiceInput(onText: (String) -> Unit) {
                         }
                     }
                 }
-            }), contentAlignment = Alignment.Center) { Icon(rememberVectorPainter(icMic), "Микрофон", tint = Color(0xFF123F59), modifier = Modifier.size(22.dp)) }
+            }), contentAlignment = Alignment.Center) {
+            Icon(rememberVectorPainter(if (showStop) icStop else icSend),
+                if (showStop) "Остановить" else "Отправить", tint = OnAccent, modifier = Modifier.size(21.dp))
+        }
     }
 }

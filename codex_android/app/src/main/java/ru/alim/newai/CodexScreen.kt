@@ -233,7 +233,7 @@ fun CodexScreen(onSettings: () -> Unit) {
         }
         Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(topPad)
             .background(Brush.verticalGradient(listOf(Bg.copy(alpha = 0.98f), Bg.copy(alpha = 0.82f), Color.Transparent))))
-        CodexTopBar(session, activity.running, onSettings = onSettings, onDelete = { askDelete = true })
+        CodexTopBar(session, onSettings = onSettings, onDelete = { askDelete = true })
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding()
             .background(Bg).padding(horizontal = 10.dp).padding(top = 4.dp, bottom = 10.dp)
@@ -277,22 +277,16 @@ fun CodexScreen(onSettings: () -> Unit) {
                 }
                 val canSend = session.draft.isNotBlank() || session.attachments.isNotEmpty()
                 val showStop = session.busy && !canSend
-                if (!canSend && !showStop) {
-                    Box(Modifier.align(Alignment.BottomEnd)) {
-                        androidx.compose.runtime.key(session.id) {
-                            CodexVoiceInput { transcript ->
+                Box(Modifier.align(Alignment.BottomEnd)) {
+                    androidx.compose.runtime.key(session.id) {
+                        CodexVoiceInput(
+                            showStop = showStop,
+                            onClick = { if (showStop) AppNav.stop(session) else if (canSend) send() },
+                            onText = { transcript ->
                                 session.draft = if (session.draft.isBlank()) transcript
                                     else session.draft.trimEnd() + " " + transcript
-                            }
-                        }
-                    }
-                } else {
-                    Box(Modifier.align(Alignment.BottomEnd).size(48.dp).clip(circ).background(Teal)
-                        .clickable(onClickLabel = if (showStop) "Остановить Codex" else "Отправить") {
-                            if (showStop) AppNav.stop(session) else send()
-                        }, contentAlignment = Alignment.Center) {
-                        if (showStop) Icon(rememberVectorPainter(icStop), "Остановить", tint = OnAccent, modifier = Modifier.size(21.dp))
-                        else Icon(rememberVectorPainter(icSend), "Отправить", tint = OnAccent, modifier = Modifier.size(21.dp))
+                            },
+                        )
                     }
                 }
             }
