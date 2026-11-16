@@ -82,6 +82,8 @@ fun CodexSettingsScreen(back: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             RuntimeCard()
 
+            SkillImportCard()
+
             OverlayCard()
 
             PermissionsCard()
@@ -145,6 +147,41 @@ fun CodexSettingsScreen(back: () -> Unit) {
     }
 
     if (adding) AddProviderDialog(onClose = { adding = false }, onStatus = { status = it })
+}
+
+@Composable
+private fun SkillImportCard() {
+    val ctx = LocalCtx()
+    val scope = rememberCoroutineScope()
+    var status by remember { mutableStateOf("") }
+    var importing by remember { mutableStateOf(false) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            importing = true
+            scope.launch {
+                status = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val resolver = ctx.contentResolver
+                        val name = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                            if (cursor.moveToFirst()) cursor.getString(0) else null
+                        }.orEmpty()
+                        val zip = name.endsWith(".zip", ignoreCase = true) || resolver.getType(uri) == "application/zip"
+                        resolver.openInputStream(uri)?.use { input ->
+                            SkillImport.install(input, zip, java.io.File(EmbeddedRuntime.paths(ctx).home, ".codex/skills"))
+                        } ?: error("Не удалось открыть файл")
+                    }.fold({ "Скилл «$it» импортирован. Он доступен в новых задачах." }, { it.message ?: "Не удалось импортировать скилл" })
+                }
+                importing = false
+            }
+        }
+    }
+    CardBox {
+        Text("Скиллы", style = body(16, FontWeight.SemiBold))
+        Text("Выберите SKILL.md или ZIP с одним скиллом и его файлами.", style = body(12, color = Muted), lineHeight = 16.sp)
+        if (!importing) BigButton("Импортировать скилл", { picker.launch(arrayOf("*/*")) })
+        else Text("Импортирую…", style = body(12, color = Muted))
+        if (status.isNotBlank()) Text(status, style = body(12, color = Muted))
+    }
 }
 
 @Composable
