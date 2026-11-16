@@ -109,13 +109,15 @@ class TaskService : Service() {
                         if (snapshot != null) session.progress = snapshot.optString("progress").ifBlank { snapshot.optString("status") }
                     }
                 }
+                val startedAt = android.os.SystemClock.elapsedRealtime()
                 try {
                     val answer = withContext(Dispatchers.IO) {
                         CodexGateway.run(applicationContext, goal, model, session.taskId,
                             CodexGateway.RunProvider(provider.kind, provider.baseUrl, key),
                             session.reasoningEffort.ifBlank { "medium" })
                     }
-                    session.messages += Message(role = "codex", text = answer.text, files = answer.files)
+                    session.messages += Message(role = "codex", text = answer.text, files = answer.files,
+                        durationMs = android.os.SystemClock.elapsedRealtime() - startedAt)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {

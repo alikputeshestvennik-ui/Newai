@@ -113,6 +113,7 @@ data class Message(
     val text: String,
     val files: List<Docs.FileRef> = emptyList(),
     val ts: Long = System.currentTimeMillis(),
+    val durationMs: Long? = null,
 ) {
     val mine: Boolean get() = role == "me"
     val system: Boolean get() = role == "system"
@@ -175,6 +176,7 @@ object Sessions {
                         text = m.optString("text", ""),
                         files = Docs.fromJson(m.optJSONArray("files")),
                         ts = m.optLong("ts", System.currentTimeMillis()),
+                        durationMs = if (m.has("duration_ms") && !m.isNull("duration_ms")) m.optLong("duration_ms") else null,
                     )
                 }
                 list += session
@@ -232,7 +234,7 @@ object Sessions {
             val messages = JSONArray()
             session.messages.forEach { m ->
                 messages.put(JSONObject().put("id", m.id).put("role", m.role).put("text", m.text)
-                    .put("ts", m.ts).put("files", Docs.toJson(m.files)))
+                    .put("ts", m.ts).put("duration_ms", m.durationMs).put("files", Docs.toJson(m.files)))
             }
             array.put(JSONObject().put("id", session.id).put("name", session.name).put("task_id", session.taskId)
                 .put("created", session.created).put("draft", session.draft).put("provider", session.providerId)

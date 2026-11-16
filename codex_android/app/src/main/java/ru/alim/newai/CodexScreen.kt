@@ -236,13 +236,12 @@ fun CodexScreen(onSettings: () -> Unit) {
         CodexTopBar(session, activity.running, onSettings = onSettings, onDelete = { askDelete = true })
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding()
-            .padding(horizontal = 10.dp).padding(top = 4.dp, bottom = 10.dp)
+            .background(Bg).padding(horizontal = 10.dp).padding(top = 4.dp, bottom = 10.dp)
             .onSizeChanged { composerH = it.height }) {
             if (session.busy && (session.pending.isNotBlank() || session.pendingFiles.isNotEmpty())) {
                 Text(if (Prefs.followUp == "interrupt") "Новое сообщение остановит текущую задачу" else "Новое сообщение пойдёт после текущей задачи",
                     style = body(11, color = Muted), modifier = Modifier.padding(start = 8.dp, bottom = 4.dp))
             }
-            if (composerFocused) CodexKeyboardBar(session)
             CodexRunBubble(activity)
             hint?.let { Text(it, style = body(12, color = Danger), modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) }
             if (session.attachments.isNotEmpty()) {
@@ -260,6 +259,7 @@ fun CodexScreen(onSettings: () -> Unit) {
                     }
                 }
             }
+            if (composerFocused) CodexKeyboardBar(session)
             Box(Modifier.fillMaxWidth().heightIn(min = 46.dp)) {
                 Row(Modifier.fillMaxWidth().padding(end = 56.dp).heightIn(min = 48.dp).clip(shp(24.dp))
                     .background(Card).border(1.dp, Line, shp(24.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
@@ -380,6 +380,17 @@ private fun EmptyCodex() {
     }
 }
 
+private fun formatWorkDuration(ms: Long): String {
+    val seconds = (ms / 1000).coerceAtLeast(1)
+    val hours = seconds / 3600
+    val minutes = seconds % 3600 / 60
+    return when {
+        hours > 0 -> "${hours} ч ${minutes} мин"
+        minutes > 0 -> "${minutes} мин ${seconds % 60} сек"
+        else -> "${seconds} сек"
+    }
+}
+
 @Composable
 private fun MessageBubble(message: Message) {
     if (message.system) {
@@ -413,7 +424,8 @@ private fun MessageBubble(message: Message) {
                     }
                 }
             }
-            Text(hhmm.format(Date(message.ts)), style = body(11, color = meta), modifier = Modifier.align(Alignment.End))
+            val timeLabel = message.durationMs?.let { "Работал ${formatWorkDuration(it)} · " }.orEmpty() + hhmm.format(Date(message.ts))
+            Text(timeLabel, style = body(11, color = meta), modifier = Modifier.align(Alignment.End))
         }
     }
 }

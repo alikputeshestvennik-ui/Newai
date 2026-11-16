@@ -103,7 +103,7 @@ fun Seg(options: List<Pair<String, String>>, cur: String, set: (String) -> Unit)
 
 @Composable
 fun PickerButton(icon: ImageVector, label: String, accessibility: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Row(modifier.height(44.dp).clip(shp(12.dp)).background(AccentSoft).border(1.dp, Line, shp(12.dp))
+    Row(modifier.height(44.dp).clip(shp(12.dp)).background(Card).background(AccentSoft).border(1.dp, Line, shp(12.dp))
         .clickable(onClickLabel = accessibility, onClick = onClick).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.material3.Icon(rememberVectorPainter(icon), null, tint = Teal, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(7.dp))

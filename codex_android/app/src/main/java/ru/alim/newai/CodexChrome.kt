@@ -276,7 +276,7 @@ fun CodexKeyboardBar(session: CodexSession) {
 
 private fun Boolean?.orFalse() = this == true
 
-/** Прозрачный баббл над полем ввода: публичный статус и поток ответа без reasoning. */
+/** Публичный статус и поток ответа без скрытых рассуждений. */
 @Composable
 fun CodexRunBubble(activity: CodexActivity) {
     AnimatedVisibility(
@@ -290,16 +290,16 @@ fun CodexRunBubble(activity: CodexActivity) {
         }
         Column(
             Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(shp(12.dp))
-                .background(Th.c.inBubble.copy(alpha = 0.7f)).padding(horizontal = 12.dp, vertical = 6.dp),
+                .background(Card).border(1.dp, Line, shp(12.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ThinkDots()
-                Text(activity.progress.ifBlank { "Вайбкодер работает…" }, style = body(11, FontWeight.SemiBold, Teal))
+                Text(activity.progress.ifBlank { "Вайбкодер работает…" }, style = body(11, FontWeight.SemiBold, Teal), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (activity.answer.isNotBlank()) {
                 Column(
-                    Modifier.fillMaxWidth().heightIn(max = 260.dp).verticalScroll(answerScroll),
+                    Modifier.fillMaxWidth().heightIn(max = 65.dp).verticalScroll(answerScroll),
                 ) {
                     Text(activity.answer, style = body(13, color = Ink), lineHeight = 18.sp)
                 }
