@@ -33,6 +33,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,7 +51,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
@@ -340,6 +346,36 @@ private fun ChatGptCard() {
     var limits by remember { mutableStateOf<ChatGptUsage.Limits?>(null) }
     var loadingLimits by remember { mutableStateOf(false) }
     var limitsError by remember { mutableStateOf("") }
+    var usageReady by remember { mutableStateOf(ChatGptAccount.usageConnected) }
+    var updatedAt by remember { mutableStateOf<Long?>(null) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var active by remember { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, _ ->
+            active = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(usageReady, active) {
+        if (usageReady && active) {
+            while (true) {
+                loadingLimits = true
+                try {
+                    limits = withContext(Dispatchers.IO) { ChatGptAccount.usage() }
+                    updatedAt = System.currentTimeMillis()
+                    limitsError = ""
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    limitsError = e.message ?: "Не удалось получить лимиты ChatGPT"
+                } finally {
+                    loadingLimits = false
+                }
+                delay(60_000)
+            }
+        }
+    }
     CardBox {
         Text("ChatGPT", style = body(16, FontWeight.SemiBold))
         Text(if (ChatGptAccount.connected) "Подключён${if (ChatGptAccount.email.isBlank()) "" else " · ${ChatGptAccount.email}"}"
@@ -360,32 +396,51 @@ private fun ChatGptCard() {
             }, modifier = Modifier.weight(1f))
             TextButton({ scope.launch {
                 status = withContext(Dispatchers.IO) { ChatGptAccount.signOut() }
+                usageReady = false
                 limits = null
+                updatedAt = null
                 limitsError = ""
             } }, enabled = !loadingLimits) { Text("Выйти", color = Muted) }
         }
         Text("Моделей ChatGPT: ${Providers.models("codex").size}", style = body(11, color = Muted))
         if (ChatGptAccount.connected) {
-            TextButton(onClick = {
-                scope.launch {
-                    loadingLimits = true
-                    limitsError = ""
-                    limits = null
-                    try {
-                        if (!ChatGptAccount.usageConnected) ChatGptAccount.signIn(ctx, forUsage = true)
-                        limits = withContext(Dispatchers.IO) { ChatGptAccount.usage() }
-                    } catch (e: Exception) {
-                        limitsError = e.message ?: "Не удалось получить лимиты ChatGPT"
-                    } finally { loadingLimits = false }
+            if (!usageReady) {
+                TextButton(onClick = {
+                    scope.launch {
+                        loadingLimits = true
+                        limitsError = ""
+                        try {
+                            ChatGptAccount.signIn(ctx, forUsage = true)
+                            usageReady = ChatGptAccount.usageConnected
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            limitsError = e.message ?: "Не удалось подключить лимиты ChatGPT"
+                        } finally { loadingLimits = false }
+                    }
+                }, enabled = !loadingLimits && !busy) {
+                    Text(if (loadingLimits) "Подключаем лимиты…" else "Подключить лимиты подписки", color = Teal)
                 }
-            }, enabled = !loadingLimits && !busy) {
-                Text(if (loadingLimits) "Загружаем лимиты…" else if (ChatGptAccount.usageConnected) "Показать лимиты подписки" else "Подключить и показать лимиты", color = Teal)
+            } else {
+                Column(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Bg).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Лимиты подписки", style = body(14, FontWeight.SemiBold), modifier = Modifier.weight(1f))
+                        Text(if (loadingLimits) "Обновляем…" else "Каждую минуту", style = body(10, color = Muted))
+                    }
+                    limits?.let {
+                        UsageWindow("5 часов", it.fiveHours)
+                        UsageWindow("Неделя", it.week)
+                    } ?: if (limitsError.isBlank()) {
+                        Text("Загружаем данные…", style = body(12, color = Muted))
+                    } else Unit
+                    updatedAt?.let {
+                        Text("Обновлено: ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it))}",
+                            style = body(10, color = Muted))
+                    }
+                }
             }
-            limits?.let {
-                UsageWindow("5 часов", it.fiveHours)
-                UsageWindow("Неделя", it.week)
-            }
-            if (limitsError.isNotBlank()) Text(limitsError, style = body(11, color = Danger))
+            if (limitsError.isNotBlank()) Text(if (usageReady) "$limitsError · повторим автоматически" else limitsError, style = body(11, color = Danger))
         }
         if (status.isNotBlank()) Text(status, style = body(11, color = Muted), lineHeight = 15.sp)
     }
@@ -396,9 +451,19 @@ private fun UsageWindow(title: String, window: ChatGptUsage.Window?) {
     val reset = window?.resetAt?.let {
         DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it * 1000))
     }
-    Text(if (window == null) "$title: нет данных" else
-        "$title: использовано ${window.usedPercent}%${if (reset != null) " · обновление $reset" else ""}",
-        style = body(12, color = Muted), lineHeight = 17.sp)
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = body(12, FontWeight.SemiBold), modifier = Modifier.weight(1f))
+            Text(if (window == null) "Нет данных" else "Использовано ${window.usedPercent}%",
+                style = body(12, color = Muted))
+        }
+        if (window != null) {
+            LinearProgressIndicator(progress = { window.usedPercent / 100f },
+                modifier = Modifier.fillMaxWidth().height(6.dp).clip(shp(3.dp)),
+                color = if (window.usedPercent >= 90) Danger else Teal, trackColor = Line)
+            if (reset != null) Text("Сброс: $reset", style = body(11, color = Muted))
+        }
+    }
 }
 
 @Composable
