@@ -82,6 +82,8 @@ fun CodexSettingsScreen(back: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             RuntimeCard()
 
+            ToolsCard()
+
             SkillImportCard()
 
             OverlayCard()
@@ -250,6 +252,21 @@ private fun RuntimeCard() {
         }
         Text("Первый запуск распаковывает Linux, ставит Python и Git и скачивает Codex. Дальше окружение поднимается само.",
             style = body(11, color = Muted), lineHeight = 15.sp)
+    }
+}
+
+@Composable
+private fun ToolsCard() {
+    val ctx = LocalCtx()
+    CardBox {
+        Text("Программы и инструменты", style = body(16, FontWeight.SemiBold))
+        Text("Установить или восстановить Python и pip, Node.js и npm, FFmpeg, Git, GitHub CLI, ripgrep, jq, zip, unzip, curl, wget, SSH и make. Инструменты будут доступны в задачах Codex.",
+            style = body(12, color = Muted), lineHeight = 16.sp)
+        if (EmbeddedRuntime.state == EmbeddedRuntime.State.READY) {
+            BigButton("Установить инструменты", { EmbeddedRuntime.installToolsAsync(ctx) })
+        } else {
+            Text("Кнопка появится после запуска локального окружения.", style = body(11, color = Muted))
+        }
     }
 }
 

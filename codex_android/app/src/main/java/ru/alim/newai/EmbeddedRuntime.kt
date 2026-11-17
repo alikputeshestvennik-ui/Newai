@@ -99,6 +99,34 @@ object EmbeddedRuntime {
         startAsync(app)
     }
 
+    /** Install the APK's tools into the same prefix used by Codex. */
+    fun installToolsAsync(ctx: Context) {
+        val app = ctx.applicationContext
+        synchronized(gate) {
+            if (worker?.isAlive == true || state != State.READY) return
+            state = State.PREPARING
+            detail = "Устанавливаю программы и инструменты…"
+            progress = 0.2f
+            worker = Thread({
+                try {
+                    val p = paths(app)
+                    installBundledPackages(app, p)
+                    runShell(p, "set -e\npython3 --version\npython3 -m pip --version\nnode --version\nnpm --version\nffmpeg -version >/dev/null\nffprobe -version >/dev/null\ngit --version\ngh --version\nrg --version\njq --version\nzip -v >/dev/null\nunzip -v >/dev/null\ncurl --version\nwget --version\nssh -V\nmake --version", 60)
+                    state = State.READY
+                    detail = "Программы и инструменты установлены и проверены"
+                    progress = 1f
+                } catch (e: Exception) {
+                    Log.e(TAG, "Tool installation failed", e)
+                    state = State.ERROR
+                    detail = "Не удалось установить инструменты: ${e.message.orEmpty().take(700)}"
+                    progress = 0f
+                } finally {
+                    synchronized(gate) { if (worker === Thread.currentThread()) worker = null }
+                }
+            }, "ten-tools-install").also { it.start() }
+        }
+    }
+
     fun stop() {
         process?.let { proc ->
             runCatching { proc.destroy() }
