@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.IOException
+import android.util.Log
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
@@ -98,6 +100,13 @@ internal object CodexAccount {
                     process.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
                         lines.forEach { line -> runCatching { JSONObject(line) }.getOrNull()?.let(messages::offer) }
                     }
+                } catch (e: IOException) {
+                    // The RPC owner destroys the subprocess in finally. Android may
+                    // interrupt a blocking read when the process pipe is closed.
+                    // This is normal shutdown, not an uncaught application crash.
+                    Log.d("CodexAccount", "RPC input stream closed: ${e.message}")
+                } catch (e: Exception) {
+                    Log.e("CodexAccount", "RPC reader stopped unexpectedly", e)
                 } finally {
                     messages.offer(closed)
                 }
