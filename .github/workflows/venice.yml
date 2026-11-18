@@ -1,0 +1,92 @@
+name: Часы Венеции · APK
+on:
+  push:
+    branches: [release/venice]
+    paths: ['venice/**', '.github/workflows/venice.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    working-directory: venice
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: venice/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx cap sync android
+      - run: ./gradlew test lint assembleRelease
+        working-directory: venice/android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: venice-build-input
+          retention-days: 1
+          path: venice/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+  play:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: venice/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: venice-screen-check
+          path: venice/test-results
+  sign:
+    if: github.repository == 'alikputeshestvennik-ui/Newai' && github.ref == 'refs/heads/release/venice'
+    needs: [android, play]
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: venice-build-input
+      - name: Подписать и проверить APK
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/venice.keystore"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "${KEYSTORE_B64:?}" | base64 -d > "$key"
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          "$tools/zipalign" -p -f 4 app-release-unsigned.apk aligned.apk
+          "$tools/apksigner" sign --ks "$key" --ks-pass env:STORE_PASSWORD --key-pass env:KEY_PASSWORD --out Venice.apk aligned.apk
+          "$tools/apksigner" verify --verbose Venice.apk
+          analyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          test "$("$analyzer" manifest application-id Venice.apk)" = ru.alim.venice
+          test "$("$analyzer" manifest debuggable Venice.apk)" = false
+          if "$analyzer" manifest permissions Venice.apk | grep -q android.permission; then exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Venice-APK
+          path: Venice.apk
+          if-no-files-found: error
