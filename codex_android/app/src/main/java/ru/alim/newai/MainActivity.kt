@@ -1,6 +1,7 @@
 package ru.alim.newai
 
 import android.content.Intent
+import android.app.AlertDialog
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
@@ -26,6 +27,7 @@ class MainActivity : ComponentActivity() {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
+        CrashDiagnostics.install(this)
         Prefs.init(this)
         ChatMemory.init(this)
         Sessions.init(this)
@@ -34,7 +36,8 @@ class MainActivity : ComponentActivity() {
         Th.load()
         Fonts.load(assets)
         openFromIntent(intent)
-        EmbeddedRuntime.startAsync(applicationContext)
+        val previousCrash = CrashDiagnostics.read(this)
+        if (previousCrash == null) EmbeddedRuntime.startAsync(applicationContext)
         setContent {
             VibeTheme {
                 if (drawAroundCutout) {
@@ -45,6 +48,29 @@ class MainActivity : ComponentActivity() {
                     Surface(Modifier.fillMaxSize()) { App() }
                 }
             }
+        }
+        if (previousCrash != null) {
+            AlertDialog.Builder(this)
+                .setTitle("Отчёт о сбое Вайбкодера")
+                .setMessage("Предыдущий запуск завершился ошибкой. Отправь отчёт разработчику или скопируй его. Пока окно открыто, Codex не запускается.")
+                .setPositiveButton("Поделиться") { _, _ ->
+                    val share = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, "Vibecoder crash report")
+                        putExtra(Intent.EXTRA_TEXT, previousCrash)
+                    }
+                    startActivity(Intent.createChooser(share, "Отправить отчёт"))
+                }
+                .setNeutralButton("Копировать") { _, _ ->
+                    val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Vibecoder crash", previousCrash))
+                }
+                .setNegativeButton("Продолжить запуск") { _, _ ->
+                    CrashDiagnostics.clear(this)
+                    EmbeddedRuntime.startAsync(applicationContext)
+                }
+                .setCancelable(false)
+                .show()
         }
     }
 
