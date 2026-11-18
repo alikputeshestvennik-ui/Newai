@@ -31,6 +31,7 @@ import java.util.zip.ZipInputStream
 object EmbeddedRuntime {
     private const val TAG = "EmbeddedRuntime"
     const val PORT = 18766
+    private const val PROXY_PORT = 18767
     private const val CODEX_VERSION = "0.167.2"
     private const val CODEX_URL =
         "https://github.com/openai/codex/releases/download/rust-v$CODEX_VERSION/codex-aarch64-unknown-linux-musl.tar.gz"
@@ -75,6 +76,48 @@ object EmbeddedRuntime {
 
     fun logTail(): String = lastLog.takeLast(1500)
 
+    @Synchronized
+    fun workspace(ctx: Context): File {
+        val p = paths(ctx)
+        val root = File(p.filesDir, "Codex")
+        val legacy = File(p.tenHome, "workspace")
+        if (!root.exists() && legacy.isDirectory && legacy.renameTo(root)) {
+            runCatching { Os.symlink(root.absolutePath, legacy.absolutePath) }.onFailure {
+                check(root.renameTo(legacy)) { "Не удалось восстановить прежнюю папку Codex" }
+            }
+        }
+        check(root.isDirectory || root.mkdirs()) { "Не удалось создать папку Codex" }
+        return root
+    }
+
+    fun taskWorkspace(ctx: Context, taskId: String): File {
+        val root = workspace(ctx)
+        if (taskId == "default") return root
+        val current = File(root, taskId)
+        val legacy = File(paths(ctx).tenHome, "workspace/$taskId")
+        return if (!current.exists() && legacy.isDirectory) legacy else current
+    }
+
+    fun skillsDirectory(ctx: Context): File = File(paths(ctx).home, ".agents/skills")
+
+    internal fun codexProcess(ctx: Context, vararg args: String): Process {
+        val p = paths(ctx)
+        return ProcessBuilder(listOf(File(p.prefix, "bin/codex").absolutePath) + args)
+            .directory(workspace(ctx))
+            .redirectErrorStream(true)
+            .apply {
+                val processEnvironment = environment()
+                processEnvironment.clear()
+                processEnvironment.putAll(this@EmbeddedRuntime.environment(p))
+                val proxy = "http://127.0.0.1:$PROXY_PORT"
+                processEnvironment["HTTPS_PROXY"] = proxy
+                processEnvironment["HTTP_PROXY"] = proxy
+                processEnvironment["ALL_PROXY"] = proxy
+                processEnvironment["NO_PROXY"] = "127.0.0.1,localhost"
+            }
+            .start()
+    }
+
     fun tokenOrEmpty(ctx: Context): String {
         val token = File(paths(ctx).tenHome, "token")
         if (!token.isFile) return ""
@@ -111,13 +154,13 @@ object EmbeddedRuntime {
                 try {
                     val p = paths(app)
                     installBundledPackages(app, p)
-                    runShell(p, "set -e\npython3 --version\npython3 -m pip --version\nnode --version\nnpm --version\nffmpeg -version >/dev/null\nffprobe -version >/dev/null\ngit --version\ngh --version\nrg --version\njq --version\nzip -v >/dev/null\nunzip -v >/dev/null\ncurl --version\nwget --version\nssh -V\nmake --version", 60)
+                    runShell(p, "set -ex\npython3 --version\npython3 -m pip --version\nnode --version\nnpm --version\nffmpeg -version >/dev/null\nffprobe -version >/dev/null\ngit --version\ngh --version\nrg --version\njq --version\nzip -v >/dev/null\nunzip -v >/dev/null\ncurl --version\nwget --version\nssh -V\nmake --version", 60)
                     state = State.READY
                     detail = "Программы и инструменты установлены и проверены"
                     progress = 1f
                 } catch (e: Exception) {
                     Log.e(TAG, "Tool installation failed", e)
-                    state = State.ERROR
+                    state = if (healthy()) State.READY else State.ERROR
                     detail = "Не удалось установить инструменты: ${e.message.orEmpty().take(700)}"
                     progress = 0f
                 } finally {
@@ -177,13 +220,17 @@ object EmbeddedRuntime {
             File(p.home).mkdirs()
             File(p.prefix, "tmp").mkdirs()
             File(p.tenHome).mkdirs()
+            workspace(ctx)
 
             if (!File(p.prefix, "bin/bash").exists()) {
                 detail = "Распаковываю Linux-окружение…"
                 progress = 0.05f
                 extractBootstrap(ctx, p)
             }
-            if (!File(p.prefix, "bin/python3").exists() || !File(p.prefix, "bin/gh").exists()) {
+            val packages = ctx.assets.open("runtime/manifest.json").use { it.readBytes() }
+            val installed = File(p.prefix, ".bundled-packages.json")
+            if (!installed.isFile || !installed.readBytes().contentEquals(packages) ||
+                listOf("python3", "gh", "node", "npm", "ffmpeg").any { !File(p.prefix, "bin/$it").exists() }) {
                 detail = "Устанавливаю Python, Git и GitHub CLI…"
                 progress = 0.25f
                 installBundledPackages(ctx, p)
@@ -322,7 +369,8 @@ object EmbeddedRuntime {
               dpkg-deb -x "${'$'}deb" ${q(stage.absolutePath)}
             done
             src=${q(File(stage, "data/data/com.termux/files/usr").absolutePath)}
-            if [ -d "${'$'}src" ]; then cp -a "${'$'}src"/. ${q(p.prefix)}/; fi
+            test -d "${'$'}src"
+            cp -a --remove-destination "${'$'}src"/. ${q(p.prefix)}/
             chmod 700 ${q(p.prefix)}/bin/python* ${q(p.prefix)}/bin/git ${q(p.prefix)}/bin/rg ${q(p.prefix)}/bin/node ${q(p.prefix)}/bin/ffmpeg ${q(p.prefix)}/bin/ffprobe 2>/dev/null || true
             if [ ! -e ${q(p.prefix)}/bin/python ]; then ln -s python3 ${q(p.prefix)}/bin/python; fi
             rm -rf ${q(stage.absolutePath)} ${q(debs.absolutePath)}
@@ -331,6 +379,9 @@ object EmbeddedRuntime {
         if (!File(p.prefix, "bin/python3").exists()) error("Python не установился")
         rewriteAbsoluteSymlinks(p)
         rewriteShebangs(p)
+        ctx.assets.open("runtime/manifest.json").use { input ->
+            File(p.prefix, ".bundled-packages.json").outputStream().use { input.copyTo(it) }
+        }
     }
 
     /** Termux packages contain absolute symlinks to /data/data/com.termux/files/usr. */
@@ -353,7 +404,7 @@ object EmbeddedRuntime {
     /** Termux packages embed /data/data/com.termux/files/usr in script shebangs. */
     private fun rewriteShebangs(p: Paths) {
         val termuxPrefix = "/data/data/com.termux/files/usr"
-        for (root in listOf(File(p.prefix, "bin"), File(p.prefix, "libexec"))) {
+        for (root in listOf(File(p.prefix, "bin"), File(p.prefix, "libexec"), File(p.prefix, "lib/node_modules/npm/bin"))) {
             if (!root.isDirectory) continue
             root.walkTopDown().forEach { file ->
                 if (!file.isFile || java.nio.file.Files.isSymbolicLink(file.toPath()) || file.length() > 2_000_000) return@forEach
@@ -435,20 +486,18 @@ object EmbeddedRuntime {
     private fun writeConfig(p: Paths) {
         val dir = File(p.home, ".codex")
         dir.mkdirs()
-        val workspace = File(p.tenHome, "workspace").absolutePath
         File(dir, "config.toml").writeText(
             """
             approval_policy = "never"
             sandbox_mode = "danger-full-access"
             allow_login_shell = false
+            cli_auth_credentials_store = "file"
 
             [features]
             shell_snapshot = false
             code_mode_host = true
             """.trimIndent() + "\n"
         )
-        File(p.tenHome, "workspace").mkdirs()
-        File(p.home, "workspace").mkdirs()
         File(p.home, ".gitconfig").writeText(
             """
             [user]
@@ -460,8 +509,6 @@ object EmbeddedRuntime {
                 helper = "!f() { echo username=x-access-token; echo password=${'$'}GH_TOKEN; }; f"
             """.trimIndent() + "\n"
         )
-        // Keep a likely repository location ready for git clone.
-        File(workspace).mkdirs()
     }
 
     private fun installDns(ctx: Context, p: Paths) {
@@ -602,7 +649,8 @@ object EmbeddedRuntime {
             "PYTHONUTF8" to "1",
             "PYTHONNOUSERSITE" to "1",
             "TEN_LOCAL_HOME" to p.tenHome,
-            "TEN_PROXY_PORT" to "18767",
+            "TEN_CODEX_WORKSPACE" to File(p.filesDir, "Codex").absolutePath,
+            "TEN_PROXY_PORT" to PROXY_PORT.toString(),
             "TEN_CODEX_SANDBOX" to "danger-full-access",
         )
         if (preload.exists()) env["LD_PRELOAD"] = preload.absolutePath

@@ -150,11 +150,7 @@ object CodexGateway {
             routed.startsWith("chatgpt:") || ModelRouting.isChatGpt(routed) -> Providers.CHATGPT
             else -> ""
         }
-        val providerToken = if (kind == Providers.CHATGPT) {
-            ChatGptAccount.access()
-        } else {
-            runProvider?.key?.trim().orEmpty()
-        }
+        val providerToken = if (kind == Providers.CHATGPT) "" else runProvider?.key?.trim().orEmpty()
         require(kind == Providers.CHATGPT || providerToken.isNotBlank()) { "Сначала сохрани API-ключ выбранного провайдера" }
         val body = JSONObject().put("goal", goal).put("selected", routed)
             .put("provider_token", providerToken).put("task_id", taskId)
@@ -179,8 +175,7 @@ object CodexGateway {
                         val reason = snapshot.optString("error").ifBlank { "Локальный Codex завершился с ошибкой" }
                         if (kind == Providers.CHATGPT && (reason.contains("token_expired", ignoreCase = true) ||
                                 reason.contains("authentication token is expired", ignoreCase = true))) {
-                            ChatGptAccount.expireIfCurrent(providerToken)
-                            error("Срок действия сессии ChatGPT истёк во время задачи. Отправь «продолжи»: приложение обновит сессию. Если обновление не удастся, войди в ChatGPT заново в настройках.")
+                            error("Сессия ChatGPT истекла. Войди заново в настройках и повтори запрос.")
                         }
                         error(reason)
                     }

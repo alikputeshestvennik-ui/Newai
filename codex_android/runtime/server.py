@@ -34,7 +34,8 @@ if not TOKEN.exists():
     with os.fdopen(fd, "w") as f:
         f.write(secrets.token_urlsafe(32))
 SECRET = TOKEN.read_text().strip()
-WORK = ROOT / "workspace"
+LEGACY_WORK = ROOT / "workspace"
+WORK = Path(os.environ.get("TEN_CODEX_WORKSPACE", LEGACY_WORK))
 WORK.mkdir(exist_ok=True)
 
 PROXY_PORT = int(os.environ.get("TEN_PROXY_PORT", "18767"))
@@ -52,6 +53,8 @@ def safe_task_id(value: object) -> str:
 
 def task_workspace(task_id: str) -> Path:
     directory = WORK if task_id == "default" else WORK / task_id
+    if task_id != "default" and not directory.exists() and (LEGACY_WORK / task_id).is_dir():
+        directory = LEGACY_WORK / task_id
     directory.mkdir(parents=True, exist_ok=True)
     return directory
 
@@ -798,9 +801,9 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
             if selected.startswith(("chatgpt:", "deepseek:", "any:", "compatible:")):
                 model_id = selected.split(":", 1)[1]
         backend = None
-        if selected.startswith("chatgpt:"):
-            backend = "https://api.openai.com/v1"
-        elif selected.startswith("deepseek:"):
+        if selected == "chatgpt:auto":
+            model_id = ""
+        if selected.startswith("deepseek:"):
             backend = "https://api.deepseek.com"
         elif selected.startswith("any:") or re.match(r"^(?:cx|cc|ds|ag|kmc)/", selected, re.IGNORECASE):
             backend = "https://anymodel.org/v1"
@@ -986,7 +989,6 @@ class Handler(BaseHTTPRequestHandler):
         backend = None
         model_id = selected
         if selected.startswith("chatgpt:"):
-            backend = "https://api.openai.com/v1"
             model_id = selected.split(":", 1)[1]
         elif selected.startswith("deepseek:"):
             backend = "https://api.deepseek.com"

@@ -54,11 +54,14 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalClipboardManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
+import androidx.compose.ui.text.AnnotatedString
 import java.text.DateFormat
 import java.util.Date
 
@@ -85,6 +88,8 @@ fun CodexSettingsScreen(back: () -> Unit) {
             ToolsCard()
 
             SkillImportCard()
+
+            FileManagerCard()
 
             OverlayCard()
 
@@ -167,11 +172,14 @@ private fun SkillImportCard() {
                         val name = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                             if (cursor.moveToFirst()) cursor.getString(0) else null
                         }.orEmpty()
-                        val zip = name.endsWith(".zip", ignoreCase = true) || resolver.getType(uri) == "application/zip"
-                        resolver.openInputStream(uri)?.use { input ->
-                            SkillImport.install(input, zip, java.io.File(EmbeddedRuntime.paths(ctx).home, ".codex/skills"))
+                        resolver.openInputStream(uri)?.buffered()?.use { input ->
+                            input.mark(4)
+                            val archiveHeader = input.read() == 0x50 && input.read() == 0x4b
+                            input.reset()
+                            val zip = archiveHeader || name.endsWith(".zip", ignoreCase = true) || resolver.getType(uri) == "application/zip"
+                            SkillImport.install(input, zip, EmbeddedRuntime.skillsDirectory(ctx))
                         } ?: error("Не удалось открыть файл")
-                    }.fold({ "Скилл «$it» импортирован. Он доступен в новых задачах." }, { it.message ?: "Не удалось импортировать скилл" })
+                    }.fold({ "Импортировано: ${it.joinToString(", ")}. Скиллы доступны в новых задачах Codex." }, { it.message ?: "Не удалось импортировать скиллы" })
                 }
                 importing = false
             }
@@ -179,8 +187,8 @@ private fun SkillImportCard() {
     }
     CardBox {
         Text("Скиллы", style = body(16, FontWeight.SemiBold))
-        Text("Выберите SKILL.md или ZIP с одним скиллом и его файлами.", style = body(12, color = Muted), lineHeight = 16.sp)
-        if (!importing) BigButton("Импортировать скилл", { picker.launch(arrayOf("*/*")) })
+        Text("Добавьте SKILL.md или ZIP с несколькими скиллами в любых вложенных папках. Импортируйте только архивы из доверенных источников: скиллы могут содержать инструкции и скрипты.", style = body(12, color = Muted), lineHeight = 16.sp)
+        if (!importing) BigButton("Импортировать скиллы", { picker.launch(arrayOf("*/*")) })
         else Text("Импортирую…", style = body(12, color = Muted))
         if (status.isNotBlank()) Text(status, style = body(12, color = Muted))
     }
@@ -330,8 +338,7 @@ private fun ProviderSettings(provider: Provider) {
     val refreshing = Providers.refreshing[provider.id] == true
 
     LaunchedEffect(provider.id, provider.models.size) {
-        if (provider.models.isEmpty() && !refreshing &&
-            (provider.kind == Providers.CHATGPT && ChatGptAccount.connected || provider.kind != Providers.CHATGPT && hasKey)) {
+        if (provider.models.isEmpty() && !refreshing && provider.kind != Providers.CHATGPT && hasKey) {
             Providers.refresh(ctx, provider.id)
         }
     }
@@ -343,8 +350,9 @@ private fun ProviderSettings(provider: Provider) {
                 Text(provider.name, style = body(14, FontWeight.SemiBold))
                 Text(when {
                     refreshing -> "Загружаю модели…"
+                    provider.kind == Providers.CHATGPT && CodexAccount.account == null -> "Требуется вход"
                     provider.models.isNotEmpty() -> "Моделей: ${provider.models.size}"
-                    hasKey || provider.kind == Providers.CHATGPT && ChatGptAccount.connected -> "Модели ещё не загружены"
+                    hasKey -> "Модели ещё не загружены"
                     else -> "Ключ не добавлен"
                 }, style = body(11, color = if (provider.note.isNotBlank()) Danger else Muted))
             }
@@ -383,8 +391,9 @@ private fun ProviderSettings(provider: Provider) {
                 }, bg = Card, fg = Ink, border = Line, modifier = Modifier.weight(1f))
             }
         } else {
-            Text(if (ChatGptAccount.connected) "Вход выполнен${if (ChatGptAccount.email.isBlank()) "" else " · ${ChatGptAccount.email}"}" else "Войди в ChatGPT ниже — модели подтянутся сами.",
-                style = body(11, color = if (ChatGptAccount.connected) Muted else Amber))
+            val account = CodexAccount.account
+            Text(if (account != null) "Вход выполнен${if (account.email.isBlank()) "" else " · ${account.email}"}" else "Войди в ChatGPT ниже — модели подтянутся сами.",
+                style = body(11, color = if (account != null) Muted else Amber))
         }
         if (provider.note.isNotBlank()) Text(provider.note, style = body(11, color = Danger), lineHeight = 15.sp)
         if (status.isNotBlank()) Text(status, style = body(11, color = Muted))
@@ -395,12 +404,15 @@ private fun ProviderSettings(provider: Provider) {
 private fun ChatGptCard() {
     val ctx = LocalCtx()
     val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
     var busy by remember { mutableStateOf(false) }
+    var loginJob by remember { mutableStateOf<Job?>(null) }
+    var code by remember { mutableStateOf<CodexAccount.DeviceCode?>(null) }
     var status by remember { mutableStateOf("") }
     var limits by remember { mutableStateOf<ChatGptUsage.Limits?>(null) }
     var loadingLimits by remember { mutableStateOf(false) }
     var limitsError by remember { mutableStateOf("") }
-    var usageReady by remember { mutableStateOf(ChatGptAccount.usageConnected) }
+    val account = CodexAccount.account
     var updatedAt by remember { mutableStateOf<Long?>(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var active by remember { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
@@ -411,12 +423,12 @@ private fun ChatGptCard() {
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(usageReady, active) {
-        if (usageReady && active) {
+    LaunchedEffect(account, active) {
+        if (account != null && active) {
             while (true) {
                 loadingLimits = true
                 try {
-                    limits = withContext(Dispatchers.IO) { ChatGptAccount.usage() }
+                    limits = CodexAccount.limits(ctx)
                     updatedAt = System.currentTimeMillis()
                     limitsError = ""
                 } catch (e: CancellationException) {
@@ -432,51 +444,58 @@ private fun ChatGptCard() {
     }
     CardBox {
         Text("ChatGPT", style = body(16, FontWeight.SemiBold))
-        Text(if (ChatGptAccount.connected) "Подключён${if (ChatGptAccount.email.isBlank()) "" else " · ${ChatGptAccount.email}"}"
-            else "Вход по подписке ChatGPT, без API-ключа.", style = body(12, color = if (ChatGptAccount.connected) Muted else Amber))
+        Text(if (account != null) "Подключён${if (account.email.isBlank()) "" else " · ${account.email}"}"
+            else "Вход через Codex по одноразовому коду, без API-ключа.", style = body(12, color = if (account != null) Muted else Amber))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            BigButton(if (busy) "Отменить вход" else "Войти", {
-                if (busy) { ChatGptAccount.cancel(); busy = false; status = "Вход отменён" }
-                else scope.launch {
+            if (account == null || loginJob != null) BigButton(if (loginJob != null) "Отменить вход" else "Войти", {
+                if (loginJob != null) { loginJob?.cancel(); status = "Вход отменён" }
+                else loginJob = scope.launch {
                     busy = true
+                    status = "Запрашиваю код входа…"
                     try {
-                        ChatGptAccount.signIn(ctx)
+                        CodexAccount.signIn(ctx) { device -> withContext(Dispatchers.Main) {
+                            code = device
+                            status = "Открой страницу OpenAI, введи код и вернись сюда."
+                        } }
+                        ctx.deleteSharedPreferences("chatgpt_account")
                         status = "Вход выполнен"
                         Providers.refresh(ctx, "codex")
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         status = e.message ?: "Не удалось войти"
-                    } finally { busy = false }
+                    } finally { busy = false; code = null; loginJob = null }
                 }
             }, modifier = Modifier.weight(1f))
-            TextButton({ scope.launch {
-                status = withContext(Dispatchers.IO) { ChatGptAccount.signOut() }
-                usageReady = false
-                limits = null
-                updatedAt = null
-                limitsError = ""
-            } }, enabled = !loadingLimits) { Text("Выйти", color = Muted) }
+            if (account != null) TextButton({ scope.launch {
+                busy = true
+                try {
+                    CodexAccount.signOut(ctx)
+                    Providers.resetCodexModels()
+                    limits = null
+                    updatedAt = null
+                    limitsError = ""
+                    status = "Выход выполнен"
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    status = e.message ?: "Не удалось выйти"
+                } finally { busy = false }
+            } }, enabled = !busy) { Text("Выйти", color = Muted) }
         }
-        Text("Моделей ChatGPT: ${Providers.models("codex").size}", style = body(11, color = Muted))
-        if (ChatGptAccount.connected) {
-            if (!usageReady) {
-                TextButton(onClick = {
-                    scope.launch {
-                        loadingLimits = true
-                        limitsError = ""
-                        try {
-                            ChatGptAccount.signIn(ctx, forUsage = true)
-                            usageReady = ChatGptAccount.usageConnected
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            limitsError = e.message ?: "Не удалось подключить лимиты ChatGPT"
-                        } finally { loadingLimits = false }
-                    }
-                }, enabled = !loadingLimits && !busy) {
-                    Text(if (loadingLimits) "Подключаем лимиты…" else "Подключить лимиты подписки", color = Teal)
-                }
-            } else {
-                Column(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Bg).padding(14.dp),
+        code?.let { device ->
+            Text(device.value, style = body(20, FontWeight.Bold))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton({ clipboard.setText(AnnotatedString(device.value)) }) { Text("Копировать код") }
+                TextButton({
+                    runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(device.url))) }
+                        .onFailure { status = "Не удалось открыть браузер: ${device.url}" }
+                }) { Text("Открыть OpenAI") }
+            }
+            Text("Если OpenAI не принимает код, проверь, включён ли вход по коду устройства в настройках безопасности ChatGPT.", style = body(11, color = Muted))
+        }
+        if (account != null) {
+            Column(Modifier.fillMaxWidth().clip(shp(14.dp)).background(Bg).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("Лимиты подписки", style = body(14, FontWeight.SemiBold), modifier = Modifier.weight(1f))
@@ -493,8 +512,7 @@ private fun ChatGptCard() {
                             style = body(10, color = Muted))
                     }
                 }
-            }
-            if (limitsError.isNotBlank()) Text(if (usageReady) "$limitsError · повторим автоматически" else limitsError, style = body(11, color = Danger))
+            if (limitsError.isNotBlank()) Text("$limitsError · повторим автоматически", style = body(11, color = Danger))
         }
         if (status.isNotBlank()) Text(status, style = body(11, color = Muted), lineHeight = 15.sp)
     }

@@ -316,7 +316,7 @@ private fun Modifier.onFocusChangedCompat(onChange: (Boolean) -> Unit): Modifier
 /** Копирует выбранные файлы в рабочую папку Codex и оставляет в композере визуальные вложения. */
 private fun attachFiles(ctx: android.content.Context, session: CodexSession, uris: List<Uri>) {
     if (uris.isEmpty()) return
-    val workspace = java.io.File(java.io.File(EmbeddedRuntime.paths(ctx).tenHome, "workspace"), session.taskId)
+    val workspace = EmbeddedRuntime.taskWorkspace(ctx, session.taskId)
     workspace.mkdirs()
     val added = mutableListOf<Docs.FileRef>()
     for (uri in uris) {
@@ -616,7 +616,7 @@ private const val ARTIFACT_HOST = "newai.local"
 private const val ARTIFACT_ORIGIN = "https://newai.local"
 
 private fun artifactWorkspaceRoot(file: File): File {
-    val marker = "/workspace/"
+    val marker = if (file.path.contains("/files/Codex/")) "/files/Codex/" else "/workspace/"
     val markerStart = file.path.indexOf(marker)
     if (markerStart >= 0) {
         val taskEnd = file.path.indexOf('/', markerStart + marker.length)

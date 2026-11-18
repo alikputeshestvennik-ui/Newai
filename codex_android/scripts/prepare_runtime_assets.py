@@ -34,7 +34,7 @@ BOOTSTRAP_MIRROR = (
 BOOTSTRAP_SHA256 = "ea2aeba8819e517db711f8c32369e89e7c52cee73e07930ff91185e1ab93f4f3"
 TERMUX_BASE = "https://packages.termux.dev/apt/termux-main"
 TERMUX_INDEX = f"{TERMUX_BASE}/dists/stable/main/binary-aarch64/Packages"
-PACKAGES = ("python", "python-pip", "git", "gh", "ripgrep", "zip", "unzip", "jq", "nodejs", "ffmpeg", "curl", "wget", "openssh", "make")
+PACKAGES = ("python", "python-pip", "git", "gh", "ripgrep", "zip", "unzip", "jq", "nodejs", "npm", "ffmpeg", "curl", "wget", "openssh", "make")
 USER_AGENT = {"User-Agent": "ten-android-runtime/1.0"}
 
 
@@ -108,6 +108,8 @@ def closure(packages: dict[str, dict[str, str]], roots: tuple[str, ...]) -> list
             continue
         package = packages.get(name)
         if package is None:
+            if name in roots:
+                raise RuntimeError(f"Required bundled package missing: {name}")
             print(f"warning: package not found in index: {name}", file=sys.stderr)
             continue
         seen.add(name)
@@ -145,7 +147,8 @@ def main() -> int:
         expected = package.get("SHA256")
         if not filename or not expected:
             raise RuntimeError(f"Bad package metadata: {name}")
-        destination = DEBS / f"{safe_name(name)}_{safe_name(package['Version'])}_aarch64.deb"
+        architecture = safe_name(package["Architecture"])
+        destination = DEBS / f"{safe_name(name)}_{safe_name(package['Version'])}_{architecture}.deb"
         url = f"{TERMUX_BASE}/{filename}"
         print(f"  {name} {package['Version']}")
         fetch(url, destination, 64)
@@ -160,6 +163,10 @@ def main() -> int:
         }
 
     runtime_dir = ASSETS / "runtime"
+    active = {entry["filename"] for entry in manifest["packages"].values()}
+    for stale in DEBS.glob("*.deb"):
+        if stale.name not in active:
+            stale.unlink()
     runtime_dir.mkdir(parents=True, exist_ok=True)
     server = ROOT / "runtime/server.py"
     (runtime_dir / "server.py").write_bytes(server.read_bytes())

@@ -100,8 +100,13 @@ class BridgeTest(unittest.TestCase):
     def test_provider_requires_key(self):
         self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "deepseek:deepseek-flash"})[0], 400)
 
-    def test_gpt_requires_key(self):
-        self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "chatgpt:gpt-5.1-codex"})[0], 400)
+    def test_gpt_auto_uses_codex_default_model(self):
+        def inspect(task, args, prompt, env, output, timeout):
+            self.assertNotIn("-m", args)
+            self.assertFalse(any(arg.startswith("model_provider=") for arg in args))
+
+        with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
+            self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "chatgpt:auto"})[0], 200)
 
     def test_provider_key_not_on_command_line(self):
         def inspect(task, args, prompt, env, output, timeout):
@@ -149,15 +154,24 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual([item["name"] for item in body["files"]], ["preview.html"])
 
-    def test_gpt_uses_openai_responses(self):
+    def test_gpt_uses_codex_managed_login(self):
         def inspect(task, args, prompt, env, output, timeout):
-            self.assertEqual(env["TEN_PROVIDER_TOKEN"], "chatgpt-token")
-            self.assertIn("https://api.openai.com/v1", str(args))
-            self.assertIn('wire_api="responses"', str(args))
+            self.assertNotIn("https://api.openai.com/v1", str(args))
+            self.assertFalse(any(arg.startswith("model_provider=") for arg in args))
             self.assertIn("gpt-5.1-codex", args)
+            self.assertNotEqual(env.get("TEN_PROVIDER_TOKEN"), "ignored-token")
 
         with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
-            self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "chatgpt:gpt-5.1-codex", "provider_token": "chatgpt-token"})[0], 200)
+            self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "chatgpt:gpt-5.1-codex", "provider_token": "ignored-token"})[0], 200)
+
+    def test_workspace_uses_codex_root_and_keeps_legacy_dialogs(self):
+        with tempfile.TemporaryDirectory() as storage:
+            root = Path(storage) / "Codex"
+            old = Path(storage) / "old"
+            (old / "existing").mkdir(parents=True)
+            with patch.object(self.bridge, "WORK", root), patch.object(self.bridge, "LEGACY_WORK", old):
+                self.assertEqual(self.bridge.task_workspace("new"), root / "new")
+                self.assertEqual(self.bridge.task_workspace("existing"), old / "existing")
 
     def test_reasoning_effort_passed_to_codex(self):
         def inspect(task, args, prompt, env, output, timeout):

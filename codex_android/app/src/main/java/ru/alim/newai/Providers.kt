@@ -59,7 +59,7 @@ object Providers {
 
     private fun reload() {
         list.clear()
-        list += Provider("codex", "GPT", CHATGPT, "https://api.openai.com/v1", builtIn = true, models = cached("codex"))
+        list += Provider("codex", "GPT", CHATGPT, "", builtIn = true, models = listOf("auto"))
         list += Provider("deepseek", "DeepSeek", DEEPSEEK, "https://api.deepseek.com", builtIn = true, models = cached("deepseek"))
         list += Provider("anymodel", "AnyModel", ANY, "https://anymodel.org/v1", builtIn = true, models = cached("anymodel"))
         runCatching {
@@ -86,12 +86,12 @@ object Providers {
     fun modelName(model: String): String = model.substringAfter(':', model)
 
     /** Имя модели без префикса провайдера: провайдер уже виден в соседнем селекторе. */
-    fun label(providerId: String, model: String): String = modelName(model)
+    fun label(providerId: String, model: String): String = if (providerId == "codex" && model == "chatgpt:auto") "Авто" else modelName(model)
 
     fun firstRuntimeModel(providerId: String): String = choices(providerId).firstOrNull().orEmpty()
 
     fun defaultProvider(ctx: Context): String = when {
-        ChatGptAccount.connected && models("codex").isNotEmpty() -> "codex"
+        CodexAccount.account != null -> "codex"
         key(ctx, "deepseek").isNotBlank() -> "deepseek"
         key(ctx, "anymodel").isNotBlank() -> "anymodel"
         else -> list.firstOrNull { !it.builtIn }?.id ?: "codex"
@@ -155,9 +155,7 @@ object Providers {
             val models = withContext(Dispatchers.IO) {
                 when (provider.kind) {
                     CHATGPT -> {
-                        check(ChatGptAccount.connected) { "Сначала войди в ChatGPT" }
-                        ChatGptAccount.refreshModels()
-                        ChatGptAccount.models.map { it.removePrefix("chatgpt:") }
+                        CodexAccount.models(ctx)
                     }
                     else -> {
                         val key = key(ctx, providerId)
@@ -169,8 +167,7 @@ object Providers {
             check(models.isNotEmpty()) { "API не вернул ни одной модели" }
             val index = list.indexOfFirst { it.id == providerId }
             if (index >= 0) list[index] = list[index].copy(models = models, note = "")
-            if (provider.builtIn) prefs.edit().putString("models_$providerId", models.joinToString("\n")).apply()
-            else prefs.edit().putString("models_$providerId", models.joinToString("\n")).apply()
+            if (provider.kind != CHATGPT) prefs.edit().putString("models_$providerId", models.joinToString("\n")).apply()
             Result.success(models)
         } catch (e: Exception) {
             val message = e.message.orEmpty().ifBlank { "Не удалось загрузить модели" }
@@ -180,6 +177,11 @@ object Providers {
         } finally {
             refreshing[providerId] = false
         }
+    }
+
+    fun resetCodexModels() {
+        val index = list.indexOfFirst { it.id == "codex" }
+        if (index >= 0) list[index] = list[index].copy(models = listOf("auto"), note = "")
     }
 
     private fun fetchModels(baseUrl: String, key: String): List<String> {
