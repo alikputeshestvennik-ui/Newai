@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         Prefs.init(this)
+        ChatMemory.init(this)
         Sessions.init(this)
         Providers.init(this)
         AppNav.init(this)

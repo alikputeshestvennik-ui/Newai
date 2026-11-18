@@ -89,6 +89,8 @@ fun CodexSettingsScreen(back: () -> Unit) {
 
             SkillImportCard()
 
+            ChatMemoryCard()
+
             FileManagerCard()
 
             OverlayCard()
@@ -154,6 +156,32 @@ fun CodexSettingsScreen(back: () -> Unit) {
     }
 
     if (adding) AddProviderDialog(onClose = { adding = false }, onStatus = { status = it })
+}
+
+@Composable
+private fun ChatMemoryCard() {
+    val saved = ChatMemory.notes
+    var draft by remember(saved) { mutableStateOf(saved) }
+    val edited = draft.trim()
+    CardBox {
+        Text("Память между чатами", style = body(16, FontWeight.SemiBold))
+        Text("Добавляй заметки здесь или командой /запомни в чате. Память хранится на этом устройстве и отправляется выбранной модели с каждой задачей. Не добавляй пароли и ключи.",
+            style = body(12, color = Muted), lineHeight = 16.sp)
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Что нужно помнить") },
+            supportingText = { Text("${edited.length} / ${ChatMemory.LIMIT}") },
+            isError = edited.length > ChatMemory.LIMIT,
+            minLines = 2,
+            maxLines = 5,
+        )
+        TextButton(
+            onClick = { ChatMemory.replace(edited) },
+            enabled = edited != saved && edited.length <= ChatMemory.LIMIT,
+        ) { Text(if (edited.isEmpty() && saved.isNotEmpty()) "Очистить память" else "Сохранить") }
+    }
 }
 
 @Composable

@@ -8,6 +8,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -187,6 +188,22 @@ fun CodexScreen(onSettings: () -> Unit) {
         val text = session.draft.trim()
         val files = session.attachments.toList()
         if (text.isBlank() && files.isEmpty()) return
+        val command = text.takeWhile { !it.isWhitespace() }
+        if (command.equals("/запомни", ignoreCase = true) || command.equals("/remember", ignoreCase = true)) {
+            val note = text.drop(command.length).trim()
+            hint = when {
+                files.isNotEmpty() -> "Команда памяти не принимает вложения. Убери их и повтори."
+                note.isEmpty() || '\n' in note || '\r' in note -> "Напиши в одну строку: /запомни твоя заметка"
+                !ChatMemory.add(note) -> "Память заполнена. Освободи место в настройках."
+                else -> {
+                    session.draft = ""
+                    Sessions.save()
+                    Toast.makeText(ctx, "Сохранено в памяти для всех чатов", Toast.LENGTH_SHORT).show()
+                    null
+                }
+            }
+            return
+        }
         val providerId = session.providerId.ifBlank { Providers.defaultProvider(ctx) }
         val provider = Providers.find(providerId)
         val model = session.model.ifBlank { Providers.firstRuntimeModel(providerId) }
