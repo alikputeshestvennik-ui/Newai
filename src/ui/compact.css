@@ -1,4 +1,6 @@
 /* Map-first layout. Expanded tools keep the same 44 px touch targets. */
+#folder{pointer-events:auto;text-align:left;min-height:44px;border:0}#folder.ready small{color:#15563f;font-weight:700}#folder.ready small span:first-child{background:#f7d889;border-radius:4px;padding:0 3px}
+.folio{border-inline-start:3px solid #b77630;padding-inline-start:14px}.folio-stamp{font-weight:700;color:#704818;letter-spacing:.08em;text-transform:uppercase}.folio blockquote{margin:10px 0;padding:12px;background:#faf1d9;border-radius:8px;color:#30291e;line-height:1.5}.folio button{display:block;width:100%;text-align:left;margin:7px 0;padding:9px 12px}.folio button small{display:block;margin-top:3px}.folio details{margin-top:14px}.folio summary{min-height:44px;padding-top:8px}.folio li{margin-block:6px}
 .city-name{padding:5px 9px;background:#fcfdf5df}.city-name b{font-size:12px}.city-name small{font-size:9px;margin-top:1px}
 header{height:44px}.header-actions button{padding:6px;width:44px}
 .stats{top:calc(var(--top) + 49px);width:auto;right:var(--right);gap:0;border-radius:12px;background:var(--panel);max-width:360px;pointer-events:auto;flex-wrap:wrap}

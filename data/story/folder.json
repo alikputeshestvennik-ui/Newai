@@ -1,0 +1,7 @@
+[
+  { "id":"depot", "speaker":"stepan", "served":0, "coverage":0, "choices":[{"id":"nightShift","cash":-3000,"trust":6},{"id":"sellSpares","cash":4500,"trust":-4}] },
+  { "id":"land", "speaker":"grach", "served":80, "coverage":4, "choices":[{"id":"takeGrant","cash":12000,"trust":-7},{"id":"refuseGrant","cash":0,"trust":5}] },
+  { "id":"paper", "speaker":"vera", "served":250, "coverage":5, "choices":[{"id":"publish","cash":-5500,"trust":9},{"id":"seal","cash":3500,"trust":-4}] },
+  { "id":"hearing", "speaker":"lidia", "served":550, "coverage":6, "choices":[{"id":"publicBoard","cash":-4000,"trust":8},{"id":"cityBoard","cash":8000,"trust":-4}] },
+  { "id":"handover", "speaker":"stepan", "served":1000, "coverage":7, "choices":[{"id":"stay","cash":0,"trust":0},{"id":"leave","cash":0,"trust":0}] }
+]

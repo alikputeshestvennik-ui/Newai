@@ -27,6 +27,9 @@ export class CityMap {
   onQuality: (quality: Quality) => void = () => {};
   private renderer: THREE.WebGLRenderer;
   private projected = new THREE.Vector3();
+  private labelCamera = new THREE.Matrix4();
+  private currentCamera = new THREE.Matrix4();
+  private positionedLabels = -1;
   private matrix = new THREE.Matrix4();
   private stops: THREE.Mesh[] = [];
   private labels: HTMLButtonElement[] = [];
@@ -68,6 +71,7 @@ export class CityMap {
     this.resize();
   }
   private resize() {
+    this.positionedLabels = -1;
     this.width=this.host.clientWidth;this.height=this.host.clientHeight;
     this.renderer.setSize(this.width,this.height); this.controls.resize(this.width,this.height);
   }
@@ -80,7 +84,7 @@ export class CityMap {
   recenter(){this.controls.recenter();}
   get light(){return this.daylight;}
   update(world:World,draft:number[],endpoint?:number) {
-    const flows=demandFlows(world),hourly=world.districts.map(()=>0);
+    const flows=this.layers.has('demand')?demandFlows(world):[],hourly=world.districts.map(()=>0);
     for(const flow of flows)hourly[flow.from]+=flow.perHour;
     const top=flows.slice(0,feedback.topFlowCount),flowSignature=JSON.stringify(top.map(f=>[f.from,f.to]));
     this.flowArrows.visible=this.layers.has('demand');
@@ -152,11 +156,15 @@ export class CityMap {
     this.events.update(world,time,this.quality,this.controls.center,dt,this.controls.zoom,this.renderer.getPixelRatio());this.host.dataset.event=world.event?.id??'';
     this.actors.draw(world,time,this.controls.zoom,this.quality,this.controls.center);
     this.host.dataset.people=String(this.actors.visiblePeople);this.host.dataset.vehicles=String(this.actors.visibleVehicles);this.host.dataset.taxis=String(this.actors.visibleTaxis);
-    for(const d of world.districts){
+    this.currentCamera.multiplyMatrices(this.controls.camera.projectionMatrix,this.controls.camera.matrixWorldInverse);
+    if(this.positionedLabels!==world.districts.length || !this.labelCamera.equals(this.currentCamera)){
+      this.positionedLabels=world.districts.length;this.labelCamera.copy(this.currentCamera);
+      for(const d of world.districts){
       this.projected.set(d.x,0.2,d.y).project(this.controls.camera);const label=this.labels[d.id];
       label.style.maxWidth=`${Math.max(44,Math.min(140,3*this.width/(this.controls.camera.right-this.controls.camera.left)-4))}px`;
       label.style.left=`${(this.projected.x+1)*this.width/2}px`;label.style.top=`${(-this.projected.y+1)*this.height/2}px`;
       label.hidden=Math.abs(this.projected.x)>1||Math.abs(this.projected.y)>1;
+      }
     }
     this.renderer.render(this.scene,this.controls.camera);this.frames++;
     const wallTime = performance.now() / 1000;

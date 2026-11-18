@@ -63,7 +63,8 @@ export class EventView {
       if(snowing){const k=i*3;this.snowPositions[k]=x;this.snowPositions[k+1]=y;this.snowPositions[k+2]=z;}
       else{const k=i*6;this.rainPositions[k]=x;this.rainPositions[k+1]=y;this.rainPositions[k+2]=z;this.rainPositions[k+3]=x-.06;this.rainPositions[k+4]=y-.4;this.rainPositions[k+5]=z;}
     }
-    this.snow.geometry.setDrawRange(0,count);this.rain.geometry.setDrawRange(0,count*2);
-    this.snow.geometry.attributes.position.needsUpdate=true;this.rain.geometry.attributes.position.needsUpdate=true;
+    const geometry=snowing?this.snow.geometry:this.rain.geometry;
+    geometry.setDrawRange(0,snowing?count:count*2);
+    geometry.attributes.position.needsUpdate=true;
   }
 }

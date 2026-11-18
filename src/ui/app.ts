@@ -5,6 +5,8 @@ import type { Settings } from '../core/settings';
 import { E, MODES } from '../sim/config';
 import { constructionCost, reserved } from '../sim/commands';
 import { cityReport } from './city';
+import { folderPage } from './folder';
+import { isReady } from '../story/folder';
 import { demandReport } from './demand';
 import { canPlanGoal, goalBoard, goalDetail, goalTitle, updateGoalBoard } from './goals';
 import type { Engagement } from '../core/engagement';
@@ -40,7 +42,7 @@ export class GameUI {
   mode: Mode='marshrutka';
   readonly mapHost: HTMLElement;
   constructor(host: HTMLElement) {
-    host.innerHTML=`<div id="map"></div><header><div class="city-name"><b>${t('city')}</b><small id="date"></small></div><div class="header-actions"><button id="settings" aria-label="${t('settings')}">⚙</button><button id="help" aria-label="${t('help')}">?</button></div></header>
+    host.innerHTML=`<div id="map"></div><header><button id="folder" class="city-name" aria-label="${t('storyName')}"><b>${t('city')}</b><small><span aria-hidden="true">✉</span> <span id="date"></span></small></button><div class="header-actions"><button id="settings" aria-label="${t('settings')}">⚙</button><button id="help" aria-label="${t('help')}">?</button></div></header>
       <section class="stats" aria-label="${t('indicators')}"><button id="stats-toggle" aria-expanded="false" aria-label="${t('allIndicators')}">⌄</button>${['budget','population','satisfaction','trust','ecology'].map(key=>`<article><small>${t(key)}</small><strong id="${key}"></strong></article>`).join('')}</section>
       <div class="map-tools"><div class="layer-buttons" role="group" aria-label="${t('layers')}">${MAP_LAYERS.map(layer=>`<button id="layer-${layer.id}" data-layer="${layer.id}" aria-pressed="false" aria-controls="map" style="--layer-color:${layer.color}">${t(layer.id)}</button>`).join('')}</div><button id="debug-toggle" aria-label="${t('debug')}">FPS</button><div id="layer-legend" hidden>${MAP_LAYERS.map(layer=>`<span data-legend="${layer.id}" style="--layer-color:${layer.color}" hidden>${t(layer.legend,{minutes:E.minutesPerTick})}</span>`).join('')}</div><button id="event-banner"></button><div id="crisis" hidden></div></div>
       <div class="zoom"><div class="rotate-tools"><button id="rotate-left" aria-label="${t('rotateLeft')}">↶</button><button id="rotate-right" aria-label="${t('rotateRight')}">↷</button></div><button id="zoom-in" aria-label="${t('zoomIn')}">+</button><button id="zoom-out" aria-label="${t('zoomOut')}">−</button><button id="recenter" aria-label="${t('recenter')}">⌖</button></div><output id="debug" hidden></output>
@@ -61,6 +63,11 @@ export class GameUI {
     new ResizeObserver(()=>host.style.setProperty('--goals-height',`${board.offsetHeight}px`)).observe(board);
     const click=(id:string,fn:()=>void)=>{document.getElementById(id)!.onclick=fn;};
     click('settings',()=>this.showSettings());
+    click('folder',()=>this.showDialog(folderPage(this.world)));
+    this.modal.addEventListener('click',event=>{
+      const choice=(event.target as HTMLElement).closest<HTMLButtonElement>('button[data-story]')?.dataset.story;
+      if(choice){this.onCommand({type:'storyChoice',choice});this.showDialog(folderPage(this.world));}
+    });
     for(const [id,cls] of [['stats-toggle','stats-open'],['goal-toggle','goals-open']])click(id,()=>{
       const open=host.classList.toggle(cls);document.getElementById(id)!.setAttribute('aria-expanded',String(open));
     });
@@ -144,6 +151,9 @@ export class GameUI {
   toast(key:string,args:Record<string,string|number>={}){const el=document.getElementById('toast')!;el.textContent=t(key,args);el.classList.add('show');clearTimeout(this.toastTimer);this.toastTimer=window.setTimeout(()=>el.classList.remove('show'),4000);}
   update(w:World){
     this.world=w;
+    const folder = document.getElementById('folder')!;
+    folder.classList.toggle('ready',isReady(w));
+    folder.setAttribute('aria-label',t(isReady(w)?'storyMail':'storyName'));
     const text=(id:string,value:string)=>{document.getElementById(id)!.textContent=value;};
     text('budget',number(w.money)+' ₽');text('population',number(w.districts.reduce((s,d)=>s+d.population,0)));
     for(const key of ['satisfaction','trust','ecology'] as const)text(key,number(w[key])+'%');

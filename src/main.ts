@@ -37,7 +37,7 @@ function start(){
   const cancel=()=>{draft=null;editing=undefined;editor=undefined;map.building=false;accumulator=0;refresh();};
   ui.onCommand=cmd=>{
     const result=applyCommand(world,cmd);if(!result.ok){ui.toast(result.error);return;}
-    const messages={changeRouteMode:'routeModeChanged',buyVehicle:'bought',assignVehicle:'assigned',releaseVehicle:'released',removeRoute:'removed',setFare:'fareChanged',serviceFleet:'serviced',takeLoan:'loanChanged',repayLoan:'loanChanged',editRoute:'edited',buildRoute:'newRoute'};
+    const messages={storyChoice:'storySaved',changeRouteMode:'routeModeChanged',buyVehicle:'bought',assignVehicle:'assigned',releaseVehicle:'released',removeRoute:'removed',setFare:'fareChanged',serviceFleet:'serviced',takeLoan:'loanChanged',repayLoan:'loanChanged',editRoute:'edited',buildRoute:'newRoute'};
     engagement.decision();ui.toast(messages[cmd.type]);audio.cue();rewards();persist();refresh();
   };
   const begin=(id?:number,extending=false)=>{

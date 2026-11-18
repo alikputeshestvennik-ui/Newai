@@ -2,6 +2,7 @@ import { E, D, MODES, EVENTS } from '../sim/config';
 import { createWorld } from '../sim/world';
 import { C, initialDevelopment, initialExpansion } from '../sim/development';
 import { initializeGoals, validGoals } from '../sim/goals';
+import { validStory } from '../story/folder';
 import type { World } from '../sim/types';
 export const LEGACY_KEY = 'gorodskoy-marshrut:stage1:v1';
 export const SAVE_KEY = 'gorodskoy-marshrut:stage2:v2';
@@ -9,7 +10,7 @@ const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFi
 export function restore(raw: string): World | null {
   try {
     const parsed = JSON.parse(raw);
-    if (!parsed || ![1,2,3,4].includes(parsed.version)) return null;
+    if (!parsed || ![1,2,3,4,5].includes(parsed.version)) return null;
     const base = createWorld();
     if(parsed.version===1){
       parsed.version=2;parsed.ecology=base.ecology;parsed.debt=0;parsed.gameOver=false;
@@ -24,6 +25,7 @@ export function restore(raw: string): World | null {
       parsed.development = parsed.districts.map((d: { population: number }) => initialDevelopment(d.population, parsed.minute));
       parsed.expansion = initialExpansion(parsed.minute); parsed.mobility = base.mobility; parsed.version = 3;
     }
+    if (parsed.version < 5 && parsed.ledger) { parsed.ledger.storyReceipts=0; parsed.ledger.storyPayments=0; }
     const w=parsed as World;
     for (const [key, val] of Object.entries(base)) if (typeof val === 'number' && !finite(w[key as keyof World])) return null;
     if (!Number.isInteger(w.seed) || w.seed < 0 || w.seed > 0xffffffff || !Number.isInteger(w.minute) || w.minute < 0 || w.minute % E.minutesPerTick || w.remainder < 0 || w.remainder >= E.minutesPerTick || w.fare < E.fareMin || w.fare > E.fareMax || w.satisfaction < 0 || w.satisfaction > 100 || w.trust < 0 || w.trust > 100) return null;
@@ -52,8 +54,9 @@ export function restore(raw: string): World | null {
     if (!Array.isArray(w.demand) || w.demand.length !== w.districts.length || w.demand.some(n => !finite(n) || n < 0)) return null;
     if (!Array.isArray(w.queues) || w.queues.length !== w.districts.length || w.queues.some(q => !Array.isArray(q) || q.length !== w.districts.length || q.some(n => !finite(n) || n < 0))) return null;
     if (w.served < 0 || w.missed < 0 || w.income < 0 || w.expenses < 0 || w.lastGrowth < 0) return null;
-    if (parsed.version === 3) { initializeGoals(w); w.version = 4; }
-    return validGoals(w) ? w : null;
+    if (parsed.version === 3) initializeGoals(w);
+    if (parsed.version < 5) { w.story = []; w.version = 5; }
+    return validGoals(w) && validStory(w.story) ? w : null;
   } catch { return null; }
 }
 export function load(storage: Pick<Storage, 'getItem'>): { world: World; warning?: string } {

@@ -14,6 +14,7 @@ export class Atmosphere {
   private day = new THREE.Color('#b9d9de');
   private night = new THREE.Color('#152639');
   private warm = new THREE.Color('#ffc09a');
+  private horizon = new THREE.Color('#f0b79a');
   private noon = new THREE.Color('#fff0cf');
   private moon = new THREE.Color('#9bb8f3');
   private litWindow = new THREE.Color('#ffdb89');
@@ -29,7 +30,7 @@ export class Atmosphere {
     this.value = this.value === undefined ? target : this.value + (target - this.value) * blend;
     const value = this.value;
     this.weatherTint += ((weather === 'rain' ? .35 : weather === 'snow' ? .15 : 0) - this.weatherTint) * blend;
-    this.sky.copy(this.night).lerp(this.day, value); this.fog.color.copy(this.sky);
+    this.sky.copy(this.night).lerp(this.day, value).lerp(this.horizon, 2 * value * (1 - value) * (1 - this.weatherTint));
     this.sky.lerp(this.night,this.weatherTint);this.fog.color.copy(this.sky);
     this.ambient.intensity = 0.7 + value * 1.5; this.sun.intensity = 0.2 + value * 2.2;
     this.sun.color.copy(this.moon).lerp(this.warm, THREE.MathUtils.smoothstep(value, 0, .45)).lerp(this.noon, THREE.MathUtils.smoothstep(value, .45, 1));

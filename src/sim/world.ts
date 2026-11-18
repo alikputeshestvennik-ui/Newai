@@ -9,11 +9,11 @@ import { emptyGoals, initializeGoals, updateGoals } from './goals';
 import type { World } from './types';
 export { applyCommand } from './commands';
 export function createWorld(seed = 412781): World {
-  const world: World = { version: 4, goals: emptyGoals(), development: D.districts.map(d => initialDevelopment(d.population)), expansion: initialExpansion(0), mobility: { transit: 0, taxi: 0, car: 0, walk: 0 }, seed: seed >>> 0, minute: 0, remainder: 0, money: E.initialMoney,
+  const world: World = { version: 5, story: [], goals: emptyGoals(), development: D.districts.map(d => initialDevelopment(d.population)), expansion: initialExpansion(0), mobility: { transit: 0, taxi: 0, car: 0, walk: 0 }, seed: seed >>> 0, minute: 0, remainder: 0, money: E.initialMoney,
     ecology: E.initialEcology, satisfaction: E.initialSatisfaction, trust: E.initialTrust, districts: structuredClone(D.districts),
     routes: [{ id: 1, mode: 'marshrutka', stops: [0, 1, 2, 3], vehicles: 1, served: 0 }], fleet: E.initialFleet,
     fleets: {marshrutka:E.initialFleet,bus:0,trolleybus:0,tram:0},wear:{marshrutka:0,bus:0,trolleybus:0,tram:0},
-    ledger:{tickets:0,advertising:0,subsidy:0,rent:0,wages:0,energy:0,maintenance:0,depreciation:0,interest:0,construction:0,purchases:0},
+    ledger:{tickets:0,advertising:0,subsidy:0,rent:0,wages:0,energy:0,maintenance:0,depreciation:0,interest:0,construction:0,purchases:0,storyReceipts:0,storyPayments:0},
     debt:0,gameOver:false,event:null,nextEvent:{id:'fair',at:E.firstEventMinute},fare: E.fare, nextRoute: 2, served: 0, missed: 0, income: 0, expenses: 0, lastGrowth: 0,
     demand: D.districts.map(() => 0), queues: D.districts.map(() => D.districts.map(() => 0)) };
   initializeGoals(world); return world;
@@ -22,12 +22,18 @@ function network(w: World) {
   const event=eventConfig(w);
   const routes = w.routes.filter(r => r.vehicles > 0 && !(event?.id==='repair'&&r.stops.includes(event.district)));
   const speed=event?.speed??1;
+  const headways = routes.map(route => headway(w,route)/speed);
   const table = w.districts.map(a => w.districts.map(b => {
-    let index = -1, time = Infinity;
-    routes.forEach((r, i) => { const travel = routeTravel(w, r, a.id, b.id)/speed; if (travel < time) { time = travel; index = i; } });
-    return { index, time, distance: distance(a,b), generation: 0 };
+    let index = -1, time = Infinity, bestCost = Infinity;
+    routes.forEach((route, position) => {
+      const travel = routeTravel(w, route, a.id, b.id)/speed;
+      const cost = E.alpha * travel + E.epsilon * headways[position] / 2;
+      if (cost < bestCost) { bestCost = cost; time = travel; index = position; }
+    });
+    return { index, time, distance: distance(a,b), generation: 0, requests: 0 };
   }));
-  return { routes, table, rateHour: -1, headways: routes.map(r => headway(w,r)/speed) };
+  const connected = table.flatMap((row, from) => row.flatMap((flow, to) => from !== to && flow.index >= 0 ? [{from,to,flow}] : []));
+  return { routes, table, connected, rateHour: -1, headways };
 }
 function tick(w: World, net: ReturnType<typeof network>): void {
   const active = net.routes;
@@ -43,7 +49,8 @@ function tick(w: World, net: ReturnType<typeof network>): void {
     for(const a of w.districts)for(const b of w.districts)net.table[a.id][b.id].generation=demand(a,b,w.minute)*(event&&(event.district<0||b.id===event.district)?event.demand:1)*E.minutesPerTick/60;
   }
   const alternativeShares=new Map<number,ReturnType<typeof modeShares>>();
-  const congestion=w.missed*E.congestionFactor/Math.max(1,w.minute);
+  const congestion=(w.mobility.car+w.mobility.taxi)*E.congestionFactor/E.minutesPerTick;
+  const requested = active.map(() => 0);
   w.demand.fill(0);
   w.mobility = { transit: 0, taxi: 0, car: 0, walk: 0 };
   let served = 0, missed = 0;
@@ -58,13 +65,18 @@ function tick(w: World, net: ReturnType<typeof network>): void {
     for (const mode of ['transit', 'taxi', 'car', 'walk'] as const) w.mobility[mode] += generated * shares[mode];
     if (best < 0) { w.queues[a.id][b.id] = 0; missed += generated + old; continue; }
     const requests = generated * shares.transit + old * E.queueRetention;
-    const boarded = Math.min(requests, remaining[best]);
-    remaining[best] -= boarded;
+    net.table[a.id][b.id].requests = requests;
+    requested[best] += requests;
+    missed += generated * (1 - shares.transit) + old * (1 - E.queueRetention);
+  }
+  for (const {from,to,flow} of net.connected) {
+    const {index: best, requests} = flow;
+    const boarded = requests * (requested[best] > remaining[best] ? remaining[best] / requested[best] : 1);
     const waiting = requests - boarded;
-    const queue = Math.min(waiting, a.population * E.maxQueuePerPerson);
-    w.queues[a.id][b.id] = queue;
+    const queue = Math.min(waiting, w.districts[from].population * E.maxQueuePerPerson);
+    w.queues[from][to] = queue;
     served += boarded; active[best].served += boarded;
-    missed += generated * (1 - shares.transit) + old * (1 - E.queueRetention) + waiting - queue;
+    missed += waiting - queue;
   }
   const covered = new Set(active.flatMap(r => r.stops)).size;
   w.served += served; w.missed += missed;

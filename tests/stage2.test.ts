@@ -109,7 +109,7 @@ describe('перенос сохранений первого этапа',()=>{
     for(const key of ['fleets','wear','ledger','debt','gameOver','event','nextEvent','ecology'])delete old[key];
     const memory=new Map([[LEGACY_KEY,JSON.stringify(old)]]);
     const storage={getItem:(key:string)=>memory.get(key)??null,setItem:(key:string,value:string)=>{memory.set(key,value);}};
-    const migrated=load(storage);expect(migrated.warning).toBeUndefined();expect(migrated.world.version).toBe(4);expect(migrated.world.money).toBe(old.money);
+    const migrated=load(storage);expect(migrated.warning).toBeUndefined();expect(migrated.world.version).toBe(5);expect(migrated.world.money).toBe(old.money);
     expect(migrated.world.fleets.marshrutka).toBe(old.fleet);expect(migrated.world.routes[0].mode).toBe('marshrutka');
     save(migrated.world,storage);expect(memory.get(LEGACY_KEY)).toBe(JSON.stringify(old));expect(memory.has(SAVE_KEY)).toBe(true);
     for(const mode of MODES){const invalid=getSnapshot(migrated.world);invalid.fleets[mode]=-1;expect(restore(JSON.stringify(invalid))).toBeNull();}

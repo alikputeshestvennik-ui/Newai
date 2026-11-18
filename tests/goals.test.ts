@@ -69,7 +69,7 @@ describe('три задачи города', () => {
     const old: any = createWorld(); old.routes[0].stops = old.districts.map((d: {id: number}) => d.id);
     old.version = 3; old.served = 12000; delete old.goals;
     const w = restore(JSON.stringify(old))!;
-    expect(w).not.toBeNull(); expect(w.version).toBe(4); expect(w.money).toBe(old.money);
+    expect(w).not.toBeNull(); expect(w.version).toBe(5); expect(w.money).toBe(old.money);
     for (const goal of w.goals.active) {
       expect(goal).toMatchObject({ kind: 'passengers', baseline: old.served });
       expect(goalProgress(w, goal).current).toBe(0);

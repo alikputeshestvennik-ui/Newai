@@ -1,6 +1,7 @@
 import { E, T, MODES } from './config';
 import { routeLength } from './demand';
 import { updateGoals } from './goals';
+import { decide } from '../story/folder';
 import type { Command, Mode, Result, World } from './types';
 export const routeCost = (count: number) => E.routeBaseCost + count * E.stopCost;
 export const reserved = (w: World, mode?: Mode) => mode ? w.fleets[mode] - w.routes.filter(r=>r.mode===mode).reduce((s,r)=>s+r.vehicles,0) : w.fleet-w.routes.reduce((s,r)=>s+r.vehicles,0);
@@ -18,6 +19,7 @@ export function constructionCost(w: World, stops: number[], mode: Mode, routeId?
 export function applyCommand(w: World, cmd: Command): Result {
   const fail = (error:string):Result=>({ok:false,error});
   if(w.gameOver) return fail('gameOver');
+  if(cmd.type==='storyChoice') return decide(w,cmd.choice);
   if (cmd.type==='buildRoute' || cmd.type==='editRoute') {
     if(!validStops(w,cmd.stops)) return fail('invalidStops');
     const old=cmd.type==='editRoute'?w.routes.find(r=>r.id===cmd.routeId):undefined;
