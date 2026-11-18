@@ -51,7 +51,7 @@ function start(){
     map.building=true;accumulator=0;ui.openPanel('map');refresh();
   };
   ui.onBuild=()=>begin();ui.onEdit=id=>begin(id);ui.onExtend=id=>{begin(id,true);tutorial.signal('extending');};ui.onCancel=()=>{cancel();ui.openPanel('routes');tutorial.signal('cancel');};
-  ui.onFocus=id=>{if(draft!==null)cancel();ui.openPanel('map');focus(id);if(id)map.recenter();refresh();};
+  ui.onFocus=id=>{if(draft!==null)return;ui.openPanel('map');focus(id);if(id)map.recenter();refresh();};
   ui.onSuggest=stops=>{ui.mode=MODES.find(mode=>unlocked(world,mode)&&reserved(world,mode)>0)??ui.mode;begin();if(draft){editor!.stops=[...stops];draft=editor!.stops;refresh();tutorial.signal('planned');}};
   ui.onConfirm=()=>{
     if(!draft||!editor||editing&&!editor.changed)return;
@@ -76,7 +76,7 @@ function start(){
     refresh();
   };
   ui.onSpeed=value=>{speed=value;accumulator=0;};ui.onModal=value=>{modal=value;accumulator=0;};
-  ui.onReset=()=>{world=createWorld();rewarded=world.goals.earned;engagement=new Engagement(world);editing=undefined;editor=undefined;draft=null;map.building=false;accumulator=0;persist();refresh();};
+  ui.onReset=()=>{world=createWorld();rewarded=world.goals.earned;engagement=new Engagement(world);editing=undefined;editor=undefined;draft=null;map.building=false;focus();accumulator=0;persist();refresh();};
   ui.onRotate=delta=>map.rotate(delta);ui.onZoom=factor=>map.changeZoom(factor);ui.onRecenter=()=>map.recenter();
   ui.onLayer=(layer,enabled)=>{if(enabled)map.layers.add(layer);else map.layers.delete(layer);map.update(snapshot,draft??[],editor?.extending?editor.endpoint:undefined);
     if(layer==='demand'&&enabled)tutorial.signal('demand');

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CityGeometry } from './geometry';
+import { valley } from './valley';
 import { infrastructure, isLandmark, roadClearance } from './infrastructure';
 import { plotPosition } from './development';
 import { D } from '../sim/config';
@@ -16,13 +17,7 @@ export class Scenery {
   private box = new THREE.BoxGeometry(1, 1, 1);
   private cone = new THREE.ConeGeometry(0.35, 0.8, 5);
   constructor(scene: THREE.Scene) {
-    const ground = new THREE.Mesh(new THREE.BoxGeometry(36, 0.16, 36), new THREE.MeshLambertMaterial({ color: '#a5bc8b' }));
-    ground.position.set(5.5, -0.15, 5.5); scene.add(ground);
-    const island = new THREE.Mesh(new THREE.BoxGeometry(13.8, 0.15, 13.8), new THREE.MeshLambertMaterial({ color: '#ccd3b2' }));
-    island.position.set(5.5, -0.04, 5.5); scene.add(island);
-    const water = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.04, 36), new THREE.MeshLambertMaterial({ color: '#72b8c2' }));
-    water.name = 'river'; water.userData.noSnow = true;
-    water.position.set(8.5, 0.025, 5.5); scene.add(water);
+    valley(scene);
     infrastructure(scene);
     const buildingMaterial = new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true });
     const roofMaterial = new THREE.MeshLambertMaterial({ color: '#857e70', flatShading: true });
@@ -81,8 +76,9 @@ export class Scenery {
       scene.add(detail, simple); this.chunks.push({ detail, simple, bounds: new THREE.Sphere(new THREE.Vector3(cx * 6 + 2.5, 0.8, cz * 6 + 2.5), 5) });
     }
     // Riverfront avenue trees, shared by both banks without blocking stop intersections.
-    const avenue = new THREE.InstancedMesh(this.cone, leafMaterial, 24);
-    for (let i = 0; i < 24; i++) this.put(avenue, i, i < 12 ? 7.85 : 9.15, 0.4, i % 12, 0.55, 0.8, 0.55);
+    const avenue = new THREE.InstancedMesh(this.cone, leafMaterial, 16);
+    const promenade=[0,2,3,5,6,8,9,11];
+    for (let i = 0; i < 16; i++) this.put(avenue, i, i < 8 ? 7.75 : 9.25, 0.4, promenade[i%8], 0.55, 0.8, 0.55);
     scene.add(avenue);
   }
   private put(mesh: THREE.InstancedMesh, index: number, x: number, y: number, z: number, sx: number, sy: number, sz: number) {
