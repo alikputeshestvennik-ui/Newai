@@ -1,5 +1,6 @@
 package ru.alim.newai
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -191,10 +192,11 @@ fun CodexScreen(onSettings: () -> Unit) {
     var askDelete by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf<String?>(null) }
     val attachPick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        attachFiles(ctx, session, uris)
+        runCatching { attachFiles(ctx, session, uris) }.onFailure { hint = it.message }
     }
+    var pendingPermissionAction by rememberSaveable(session.id) { mutableStateOf<String?>(null) }
 
-    fun send() {
+    fun send(checkWorkspace: () -> Boolean) {
         val text = session.draft.trim()
         val files = session.attachments.toList()
         if (text.isBlank() && files.isEmpty()) return
@@ -221,6 +223,7 @@ fun CodexScreen(onSettings: () -> Unit) {
             hint = "Сначала добавь провайдера и загрузи модели в настройках"
             return
         }
+        if (!checkWorkspace()) return
         session.providerId = providerId
         session.model = model
         session.draft = ""
@@ -233,6 +236,30 @@ fun CodexScreen(onSettings: () -> Unit) {
         Prefs.overlayTask = session.taskId
         Prefs.overlaySession = session.id
         if (Prefs.floatingOverlay) CodexOverlayService.start(ctx, session.taskId, session.id)
+    }
+
+    val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val action = pendingPermissionAction
+        pendingPermissionAction = null
+        if (action != null) {
+            if (!granted) hint = EmbeddedRuntime.SHARED_WORKSPACE_ERROR
+            else {
+                hint = null
+                when (action) {
+                    "attach" -> attachPick.launch(arrayOf("*/*"))
+                    "send" -> if (session.activity.clarification == null) send { true }
+                }
+            }
+        }
+    }
+
+    fun canUseWorkspace(action: String): Boolean {
+        if (!EmbeddedRuntime.needsWorkspacePermission(ctx, session.taskId)) return true
+        if (pendingPermissionAction == null) {
+            pendingPermissionAction = action
+            storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
+        return false
     }
 
     LaunchedEffect(session.id, session.messages.size) {
@@ -303,7 +330,7 @@ fun CodexScreen(onSettings: () -> Unit) {
                         })
                     Spacer(Modifier.width(8.dp))
                     Icon(rememberVectorPainter(icClip), "Прикрепить файл", tint = Muted,
-                        modifier = Modifier.size(36.dp).clickable { attachPick.launch(arrayOf("*/*")) }.padding(6.dp))
+                        modifier = Modifier.size(36.dp).clickable { if (canUseWorkspace("attach")) attachPick.launch(arrayOf("*/*")) }.padding(6.dp))
                 }
                 val canSend = clarification == null && (session.draft.isNotBlank() || session.attachments.isNotEmpty())
                 val showStop = session.busy && !canSend
@@ -311,7 +338,7 @@ fun CodexScreen(onSettings: () -> Unit) {
                     androidx.compose.runtime.key(session.id) {
                         CodexVoiceInput(
                             showStop = showStop,
-                            onClick = { if (showStop) AppNav.stop(session) else if (canSend) send() },
+                            onClick = { if (showStop) AppNav.stop(session) else if (canSend) send { canUseWorkspace("send") } },
                             onText = { transcript ->
                                 session.draft = if (session.draft.isBlank()) transcript
                                     else session.draft.trimEnd() + " " + transcript
@@ -391,7 +418,7 @@ private fun Modifier.onFocusChangedCompat(onChange: (Boolean) -> Unit): Modifier
 private fun attachFiles(ctx: android.content.Context, session: CodexSession, uris: List<Uri>) {
     if (uris.isEmpty()) return
     val workspace = EmbeddedRuntime.taskWorkspace(ctx, session.taskId)
-    workspace.mkdirs()
+    check(workspace.isDirectory || workspace.mkdirs() || workspace.isDirectory) { "Не удалось создать папку проекта" }
     val added = mutableListOf<Docs.FileRef>()
     for (uri in uris) {
         val name = runCatching {

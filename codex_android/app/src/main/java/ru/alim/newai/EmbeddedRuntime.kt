@@ -1,14 +1,18 @@
 package ru.alim.newai
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.os.Build
+import android.os.Environment
 import android.system.Os
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
@@ -25,7 +29,7 @@ import java.util.zip.ZipInputStream
  *
  * The APK carries a Termux bootstrap and the Python/Git packages needed by the
  * local bridge.  Codex itself is a static aarch64 Linux binary and is fetched
- * once on first launch.  Everything lives in the app's private storage, so the
+ * once on first launch.  The runtime lives in the app's private storage, so the
  * user never has to install Termux, type a local token, or start a server.
  */
 object EmbeddedRuntime {
@@ -90,13 +94,41 @@ object EmbeddedRuntime {
         return root
     }
 
-    fun taskWorkspace(ctx: Context, taskId: String): File {
-        val root = workspace(ctx)
+    const val SHARED_WORKSPACE_ERROR = "Разреши доступ к файлам телефона для папки CodexFiles"
+
+    @Suppress("DEPRECATION")
+    fun sharedWorkspacePath(): File = File(Environment.getExternalStorageDirectory(), "CodexFiles")
+
+    fun hasSharedStorageAccess(ctx: Context): Boolean =
+        ContextCompat.checkSelfPermission(ctx, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
+
+    fun sharedWorkspace(ctx: Context): File {
+        check(hasSharedStorageAccess(ctx)) { SHARED_WORKSPACE_ERROR }
+        val root = sharedWorkspacePath()
+        check((root.isDirectory || root.mkdirs() || root.isDirectory) && root.canWrite()) {
+            "Не удалось открыть папку CodexFiles для записи"
+        }
+        return root
+    }
+
+    private fun privateTaskWorkspace(ctx: Context, taskId: String): File? {
+        val root = File(ctx.filesDir, "Codex")
         if (taskId == "default") return root
         val current = File(root, taskId)
         val legacy = File(paths(ctx).tenHome, "workspace/$taskId")
-        return if (!current.exists() && legacy.isDirectory) legacy else current
+        return when {
+            current.isDirectory -> current
+            legacy.isDirectory -> legacy
+            else -> null
+        }
     }
+
+    fun needsWorkspacePermission(ctx: Context, taskId: String): Boolean =
+        !hasSharedStorageAccess(ctx) && privateTaskWorkspace(ctx, taskId) == null
+
+    fun taskWorkspace(ctx: Context, taskId: String): File =
+        privateTaskWorkspace(ctx, taskId) ?: File(sharedWorkspace(ctx), taskId)
 
     fun skillsDirectory(ctx: Context): File = File(paths(ctx).home, ".agents/skills")
 
@@ -547,6 +579,7 @@ object EmbeddedRuntime {
         val pb = ProcessBuilder(File(p.prefix, "bin/python3").absolutePath, script.absolutePath)
         pb.environment().clear()
         pb.environment().putAll(environment(p))
+        pb.environment()["TEN_CODEX_SHARED_WORKSPACE"] = sharedWorkspacePath().absolutePath
         pb.directory(File(p.home, "ten_runtime"))
         pb.redirectErrorStream(true)
         val proc = pb.start()

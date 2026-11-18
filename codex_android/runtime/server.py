@@ -37,6 +37,7 @@ SECRET = TOKEN.read_text().strip()
 LEGACY_WORK = ROOT / "workspace"
 WORK = Path(os.environ.get("TEN_CODEX_WORKSPACE", LEGACY_WORK))
 WORK.mkdir(exist_ok=True)
+SHARED_WORK = Path(value) if (value := os.environ.get("TEN_CODEX_SHARED_WORKSPACE")) else None
 
 PROXY_PORT = int(os.environ.get("TEN_PROXY_PORT", "18767"))
 PROXY_READY = False
@@ -52,10 +53,24 @@ def safe_task_id(value: object) -> str:
 
 
 def task_workspace(task_id: str) -> Path:
-    directory = WORK if task_id == "default" else WORK / task_id
-    if task_id != "default" and not directory.exists() and (LEGACY_WORK / task_id).is_dir():
-        directory = LEGACY_WORK / task_id
-    directory.mkdir(parents=True, exist_ok=True)
+    if task_id == "default":
+        return WORK
+    private = WORK / task_id
+    legacy = LEGACY_WORK / task_id
+    if private.is_dir():
+        return private
+    if legacy.is_dir():
+        return legacy
+    if SHARED_WORK is None:
+        private.mkdir(parents=True, exist_ok=True)
+        return private
+    directory = SHARED_WORK / task_id
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        if not os.access(directory, os.W_OK | os.X_OK):
+            raise PermissionError(directory)
+    except OSError as exc:
+        raise OSError("Нет доступа к папке CodexFiles. Проверь разрешение на доступ к файлам телефона.") from exc
     return directory
 
 

@@ -2,7 +2,6 @@ package ru.alim.newai
 
 import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Environment
 import android.webkit.MimeTypeMap
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -25,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,7 +32,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -61,23 +60,40 @@ internal fun FileManagerCard() {
     var editing by remember { mutableStateOf<File?>(null) }
     var createFolder by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
+    var openCodexFiles by rememberSaveable { mutableStateOf(false) }
 
     fun display(directory: File) {
         selected = null
         entries = emptyList()
+        message = ""
         root = directory
         folder = directory
         generation++
     }
 
-    fun openShared() {
+    fun openShared(codexFiles: Boolean) {
+        if (codexFiles) {
+            scope.launch {
+                withContext(Dispatchers.IO) { runCatching { EmbeddedRuntime.sharedWorkspace(ctx) } }
+                    .onSuccess { display(it) }.onFailure { message = it.message.orEmpty() }
+            }
+            return
+        }
         @Suppress("DEPRECATION")
         val storage = Environment.getExternalStorageDirectory()
         display(storage)
     }
 
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) openShared() else message = "Нет разрешения на общие файлы телефона"
+        if (granted) openShared(openCodexFiles) else message = "Нет разрешения на общие файлы телефона"
+    }
+
+    fun requestShared(codexFiles: Boolean) {
+        if (EmbeddedRuntime.hasSharedStorageAccess(ctx)) openShared(codexFiles)
+        else {
+            openCodexFiles = codexFiles
+            permission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
     }
 
     fun change(action: () -> Unit) {
@@ -105,21 +121,18 @@ internal fun FileManagerCard() {
 
     CardBox {
         Text("Файлы", style = body(16, FontWeight.SemiBold))
-        Text("Рабочая папка Codex и общая память телефона. Android может ограничивать доступ к системным папкам и данным других приложений.",
+        Text("Новые проекты сохраняются в CodexFiles во внутренней памяти телефона.",
             style = body(12, color = Muted), lineHeight = 16.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton({ requestShared(true) }, enabled = !working) { Text("CodexFiles") }
             TextButton({
                 scope.launch {
                     withContext(Dispatchers.IO) { runCatching { EmbeddedRuntime.workspace(ctx) } }
                         .onSuccess { display(it) }.onFailure { message = it.message.orEmpty() }
                 }
-            }, enabled = !working) { Text("Папка Codex") }
-            TextButton({
-                val storagePermission = Manifest.permission.WRITE_EXTERNAL_STORAGE
-                if (ContextCompat.checkSelfPermission(ctx, storagePermission) == PackageManager.PERMISSION_GRANTED) openShared()
-                else permission.launch(storagePermission)
-            }, enabled = !working) { Text("Память телефона") }
+            }, enabled = !working) { Text("Старые проекты") }
         }
+        TextButton({ requestShared(false) }, enabled = !working) { Text("Память телефона") }
         val directory = folder
         val boundary = root
         if (directory != null && boundary != null) {

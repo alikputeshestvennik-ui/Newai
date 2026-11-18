@@ -107,13 +107,14 @@ object CodexGateway {
     data class Result(val text: String, val files: List<Docs.FileRef>, val usage: TokenUsage?)
 
     private fun parseFiles(ctx: Context, array: org.json.JSONArray?): List<Docs.FileRef> {
-        val root = ctx.filesDir.canonicalFile
+        val roots = listOf(ctx.filesDir, EmbeddedRuntime.sharedWorkspacePath())
+            .mapNotNull { runCatching { it.canonicalFile.toPath() }.getOrNull() }
         val files = ArrayList<Docs.FileRef>()
         if (array == null) return files
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
             val file = runCatching { java.io.File(item.optString("path")).canonicalFile }.getOrNull() ?: continue
-            if (!file.isFile || !file.path.startsWith(root.path + java.io.File.separator)) continue
+            if (!file.isFile || roots.none { file.toPath().startsWith(it) }) continue
             if (isGeneratedArtifact(file.name, file.path)) continue
             val uri = runCatching { FileProvider.getUriForFile(ctx, ctx.packageName + ".files", file) }.getOrNull() ?: continue
             files += Docs.FileRef(file.name, uri, item.optString("mime", "application/octet-stream"), file.path)

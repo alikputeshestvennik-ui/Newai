@@ -240,6 +240,32 @@ send(method="turn/completed", params={"turn": {"status": "completed",
                 self.assertEqual(self.bridge.task_workspace("new"), root / "new")
                 self.assertEqual(self.bridge.task_workspace("existing"), old / "existing")
 
+    def test_shared_workspace_is_used_only_for_new_projects(self):
+        with tempfile.TemporaryDirectory() as storage:
+            private = Path(storage) / "Codex"
+            shared = Path(storage) / "CodexFiles"
+            legacy = Path(storage) / "legacy"
+            (private / "existing").mkdir(parents=True)
+            (shared / "existing").mkdir(parents=True)
+            (legacy / "older").mkdir(parents=True)
+            with patch.object(self.bridge, "WORK", private), patch.object(self.bridge, "LEGACY_WORK", legacy), \
+                    patch.object(self.bridge, "SHARED_WORK", shared):
+                self.assertEqual(self.bridge.task_workspace("new"), shared / "new")
+                self.assertEqual(self.bridge.task_workspace("existing"), private / "existing")
+                self.assertEqual(self.bridge.task_workspace("older"), legacy / "older")
+                self.assertEqual(self.bridge.task_workspace("default"), private)
+
+    def test_unavailable_shared_workspace_does_not_create_private_project(self):
+        with tempfile.TemporaryDirectory() as storage:
+            private = Path(storage) / "Codex"
+            shared = Path(storage) / "CodexFiles"
+            shared.write_text("not a directory")
+            with patch.object(self.bridge, "WORK", private), \
+                    patch.object(self.bridge, "SHARED_WORK", shared):
+                with self.assertRaisesRegex(OSError, "CodexFiles"):
+                    self.bridge.task_workspace("missing")
+                self.assertFalse((private / "missing").exists())
+
     def test_reasoning_effort_passed_to_codex(self):
         def inspect(task, args, prompt, env, output, timeout):
             self.assertIn('model_reasoning_effort="high"', str(args))
