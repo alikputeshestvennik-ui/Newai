@@ -39,6 +39,17 @@ export async function buildScene(host:HTMLElement) {
   const hand=new T.Mesh(new T.PlaneGeometry(1.94,1.95),new T.MeshBasicMaterial({map:art.hand,transparent:true,alphaTest:0.08}));
   interior.add(hand);
   const launches=[launch(art,true),launch(art,false)];canal.add(...launches.map(b=>b.root));
+  const wash=document.createElement('canvas');wash.width=256;wash.height=64;
+  const washCtx=wash.getContext('2d')!;
+  washCtx.save();washCtx.scale(4,1);
+  const shade=washCtx.createRadialGradient(32,32,2,32,32,32);
+  shade.addColorStop(0,'rgba(34,28,17,.64)');shade.addColorStop(.63,'rgba(44,35,23,.38)');shade.addColorStop(1,'rgba(35,29,21,0)');
+  washCtx.fillStyle=shade;washCtx.fillRect(0,0,64,64);washCtx.restore();
+  const shadowMaterial=new T.MeshBasicMaterial({map:new T.CanvasTexture(wash),depthWrite:false,transparent:true,polygonOffset:true,polygonOffsetFactor:1});
+  for(const b of launches){
+    const shadow=new T.Mesh(new T.PlaneGeometry(4.65,1.63),shadowMaterial);
+    shadow.rotation.x=-Math.PI/2;shadow.position.y=-.10;b.root.add(shadow);
+  }
   const wakeMat=new T.MeshBasicMaterial({color:0xe8e1b7,transparent:true,opacity:0.36,depthWrite:false});
   const ripple=new T.Mesh(new T.RingGeometry(0.88,1,40),wakeMat);ripple.rotation.x=-Math.PI/2;canal.add(ripple);
   for(const b of launches){
@@ -109,10 +120,11 @@ export async function buildScene(host:HTMLElement) {
     if(!outside){
       const inHand=phase!=='table', rise=inHand?Math.min(age*2.2,1):0;
       const t=phase==='inspect'?T.MathUtils.smootherstep(rise,0,1):inHand?1:0;
-      pocket.position.set(0,T.MathUtils.lerp(-.67,.12,t),T.MathUtils.lerp(-2.64,-2.26,t));
+      pocket.scale.setScalar(T.MathUtils.lerp(.87,.63,t));
+      pocket.position.set(0,T.MathUtils.lerp(-.67,.02,t),T.MathUtils.lerp(-2.64,-2.26,t));
       if(phase==='found'){turn=T.MathUtils.damp(turn,Math.round((turn-Math.PI)/(2*Math.PI))*2*Math.PI+Math.PI,6,dt);tilt=T.MathUtils.damp(tilt,0,6,dt);}
       pocket.rotation.set(T.MathUtils.lerp(-1.1,tilt,t),turn,Math.sin(clock*1.1)*.018);
-      hand.visible=inHand;hand.position.copy(pocket.position);hand.position.x-=.17;hand.position.y-=.18;hand.position.z-=.17;
+      hand.visible=inHand;hand.position.copy(pocket.position);hand.scale.setScalar(1.1);hand.position.x-=.09;hand.position.y-=.12;hand.position.z-=.18;
       hand.rotation.z=-.13+.035*Math.sin(turn);
       dust.rotation.z=Math.sin(clock*.10)*.045;
     }else{

@@ -56,7 +56,9 @@ function hull(parent:T.Group, timber:T.Material, trim:T.Material) {
     const width=0.55*Math.pow(Math.max(0.001,Math.sin(t*Math.PI)),0.65);
     const sheer=0.37+0.16*Math.pow(Math.abs(2*t-1),2.6);
     for(const [z,y] of [[-width,sheer],[-width*0.72,0.05],[0,-0.09],[width*0.72,0.05],[width,sheer]]){
-      vertices.push(x,y,z);uv.push(t,(y+0.1)*1.6);
+      // Fine ends rake out above the surface; a broad midship section sits in the water.
+      const rake=(1-Math.min(1,(y+0.09)/sheer))*0.31*Math.pow(Math.abs(2*t-1),4);
+      vertices.push(x-Math.sign(x)*rake,y,z);uv.push(t,(y+0.1)*1.6);
     }
     if(i>0)for(let j=0;j<4;j++){const k=i*5+j;indices.push(k-5,k,k+1,k-5,k+1,k-4);}
   }
@@ -98,6 +100,19 @@ export function launch(art:Art, lion:boolean) {
   bar(oar,[-0.12,0.25,-0.1],[1.20,-0.93,0.66],0.026,timber);
   const blade=mesh(oar,new T.SphereGeometry(1,12,8),timber,1.23,-0.97,0.68);
   blade.scale.set(0.22,0.065,0.089);blade.rotation.z=-0.68;
+  if(!lion){
+    man.visible=false;oar.visible=false;
+    // The mail launch carries a canvas awning over its enclosed cockpit.
+    const roof=new T.Group();roof.position.set(0.56,0.95,0);root.add(roof);
+    const canvas=standard(0x68756b,0.03,0.9), frame=standard(0x67472c);
+    for(const x of [-0.65,0.65]){
+      for(const z of [-0.39,0.39])bar(roof,[x,-0.64,z],[x,0.08,z],0.026,frame);
+    }
+    const cover=mesh(roof,new T.SphereGeometry(1,24,12,0,Math.PI*2,0,Math.PI/2),canvas,0,0.08);
+    cover.scale.set(.90,.20,.51);
+    mesh(roof,new T.BoxGeometry(1.46,0.24,0.73),timber,0,-.45);
+    for(const z of [-.38,.38])mesh(roof,new T.BoxGeometry(1.4,.045,.035),trim,0,-.29,z);
+  }
   const envelope=mesh(root,new T.BoxGeometry(0.34,0.21,0.02),standard(0xffdda0),1.08,1.29,0.12);
   envelope.visible=false;
   return {root,gong,target,man,oar,envelope};
