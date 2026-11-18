@@ -4,8 +4,8 @@ type Shape = 'box' | 'roof' | 'round' | 'cone' | 'cylinder';
 export class CityGeometry {
   readonly group = new THREE.Group();
   private parts = new Map<Shape, { matrix: THREE.Matrix4; color: THREE.Color }[]>();
-  add(shape: Shape, color: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, rotation = 0) {
-    const matrix = new THREE.Matrix4().makeRotationY(rotation).scale(new THREE.Vector3(sx, sy, sz)); matrix.setPosition(x, y, z);
+  add(shape: Shape, color: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, rotation = 0, roll = 0) {
+    const matrix = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0, rotation, roll, 'YXZ')).scale(new THREE.Vector3(sx, sy, sz)); matrix.setPosition(x, y, z);
     const list = this.parts.get(shape) ?? []; list.push({ matrix, color: new THREE.Color(color) }); this.parts.set(shape, list);
   }
   finish() {

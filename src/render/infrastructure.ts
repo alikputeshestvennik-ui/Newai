@@ -69,7 +69,30 @@ export function infrastructure(scene: THREE.Scene) {
   for(const z of [7.6,9.6]){box('#eeeece',12,.26,z,.54,.04,.03);for(const x of [11.75,12.25])box('#eeeece',x,.18,z,.035,.23,.035);}
   for(const x of [11,13])for(const z of [7.3,9.9]){box('#6a7e7d',x,.8,z,.04,1.5,.04);box('#fff0b7',x,1.56,z,.25,.13,.09);}
   // Bridge abutments, railings and a roundabout at the outer interchange.
-  for(const z of [1,4,7,10])for(const x of [8,9]){box('#87918b',x,-.12,z,.12,.45,.56);box('#b5c5bc',8.5,.25,z+.26,1.3,.14,.035);}
+  for(const crossing of [1,4,7,10]) {
+    for(const bank of [7.87,9.13]) box('#808c87',bank,.08,crossing,.2,.26,.66);
+    for(const side of [-.29,.29]) {
+      const shore=crossing+side;
+      box('#c8caaf',8.5,.23,shore,1.48,.07,.05);
+      if(crossing!==4)continue;
+      for(let index=0;index<6;index++){
+        const left=7.76+index*1.48/6,right=7.76+(index+1)*1.48/6;
+        const arch=(x:number)=>.26+.62*(1-((x-8.5)/.74)**2);
+        const rise=arch(right)-arch(left),run=right-left;
+        g.add('box','#aa573e',(left+right)/2,(arch(left)+arch(right))/2,shore,Math.hypot(rise,run)+.025,.075,.085,0,Math.atan2(rise,run));
+        if(index)box('#657e78',left,(arch(left)+.24)/2,shore,.032,arch(left)-.24,.035);
+      }
+    }
+    if(crossing===4)for(const crossbeam of [8.25,8.75])box('#a96a4c',crossbeam,.80,crossing,.075,.065,.62);
+  }
+  for(const bank of [7.92,9.08])for(const stretch of [2.5,5.5,8.5]){
+    box('#b2aa94',bank,.105,stretch,.16,.14,2.18);
+    box('#e3d7ba',bank,.19,stretch,.19,.04,2.2);
+  }
+  box('#997b60',8.12,.13,5.65,.32,.08,.86);
+  for(const mooring of [5.29,6.01])box('#675b4d',8.24,.17,mooring,.055,.24,.055);
+  box('#375667',8.49,.14,5.65,.28,.14,.8);box('#f7dbab',8.49,.26,5.66,.23,.13,.59);
+  box('#487e8a',8.49,.37,5.73,.21,.10,.34);box('#f1d5ad',8.49,.435,5.73,.25,.035,.38);
   g.add('cylinder','#718275',13,.13,4,.7,.1,.7);g.add('cylinder','#95a879',13,.19,4,.4,.07,.4);
   // Bus shelters: recognisable platforms, seats, roof and glass side panels.
   for(const p of [[1,10],[1,7],[4,7],[4,4],[1,1],[7,1],[7,4],[10,4],[10,1],[10,7],[7,10],[4,10]]){

@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { D, T } from '../sim/config';
+import { T } from '../sim/config';
 import type { World } from '../sim/types';
 import { Actors } from './actors';
 import { DevelopmentView } from './development';
 import { EventView } from './events';
 import { SnowCover } from './snow';
-import { roadPath } from '../sim/roads';
+import { NetworkInk } from './network';
 import { eventConfig } from '../sim/events';
 import { demandFlows } from '../sim/insights';
 import feedback from '../../data/balance/feedback.json' with { type: 'json' };
@@ -33,7 +33,8 @@ export class CityMap {
   private matrix = new THREE.Matrix4();
   private stops: THREE.Mesh[] = [];
   private labels: HTMLButtonElement[] = [];
-  private lines = new THREE.Group();
+  private network: NetworkInk;
+  focusedRoute?: number;
   private flowArrows = new THREE.LineSegments(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:'#5bff83',depthTest:false,transparent:true,opacity:.55}));
   private flowSignature = '';
   private actors: Actors;
@@ -60,7 +61,8 @@ export class CityMap {
     this.controls = new MapCamera(this.renderer.domElement,host); this.controls.onStop = id => this.onStop(id);
     this.scenery = new Scenery(this.scene); this.atmosphere = new Atmosphere(this.scene, this.scenery.windows);
     this.actors = new Actors(this.scene);this.development = new DevelopmentView(this.scene);this.events = new EventView(this.scene);
-    this.scene.add(this.lines,this.flowArrows);this.flowArrows.renderOrder=3;
+    this.network = new NetworkInk(host);
+    this.scene.add(this.flowArrows);this.flowArrows.renderOrder=3;
     const shapes=[new THREE.CircleGeometry(.48,24),new THREE.RingGeometry(.55,.62,24),new THREE.RingGeometry(.70,.77,24)];
     MAP_LAYERS.forEach((layer,index)=>{
       const heat=new THREE.InstancedMesh(shapes[index],new THREE.MeshBasicMaterial({transparent:true,opacity:0.32,depthWrite:false,depthTest:false}),20);
@@ -110,17 +112,16 @@ export class CityMap {
       this.host.append(label);this.labels.push(label);
     }
     for(const [layer,heat] of this.heat){heat.count=world.districts.length;heat.visible=this.layers.has(layer);}
-    const signature=JSON.stringify([world.routes.map(r=>[r.id,r.stops,r.vehicles,r.mode]),draft,world.event?.id]);
+    const signature=JSON.stringify([world.routes.map(r=>[r.id,r.stops]),draft,this.focusedRoute,world.districts.length]);
     if(signature!==this.signature){
       this.signature=signature;
-      for(const child of [...this.lines.children]){const line=child as THREE.Line;line.geometry.dispose();(line.material as THREE.Material).dispose();this.lines.remove(line);}
-      for(const r of [...world.routes,{id:0,stops:draft,vehicles:0}]){
-        const points:THREE.Vector3[]=[];
-        for(let j=1;j<r.stops.length;j++){
-          const a=world.districts[r.stops[j-1]],b=world.districts[r.stops[j]];
-          points.push(...roadPath(a,b).map(p=>new THREE.Vector3(p[0],.15,p[1])));
-        }
-        if(points.length){const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:r.id?D.colors[(r.id-1)%D.colors.length]:'#e28e42',depthTest:false}));line.renderOrder=5;this.lines.add(line);}
+      this.network.update(world,draft,this.focusedRoute);this.positionedLabels=-1;
+      for(const district of world.districts){
+        const label=this.labels[district.id],focus=world.routes.find(route=>route.id===this.focusedRoute);
+        const position=focus?.stops.indexOf(district.id)??-1;
+        const terminals=world.routes.filter(route=>route.stops[0]===district.id||route.stops.at(-1)===district.id);
+        const badge=focus?(position<0?'':`${position+1}`):terminals.map(route=>`№${route.id}`).join(' ');
+        label.dataset.badge=badge;label.classList.toggle('off-line',Boolean(focus)&&position<0);
       }
     }
     for(const d of world.districts){
@@ -159,6 +160,7 @@ export class CityMap {
     this.currentCamera.multiplyMatrices(this.controls.camera.projectionMatrix,this.controls.camera.matrixWorldInverse);
     if(this.positionedLabels!==world.districts.length || !this.labelCamera.equals(this.currentCamera)){
       this.positionedLabels=world.districts.length;this.labelCamera.copy(this.currentCamera);
+      this.network.project(([x,z])=>{this.projected.set(x,.17,z).project(this.controls.camera);return [(this.projected.x+1)*this.width/2,(1-this.projected.y)*this.height/2];});
       for(const d of world.districts){
       this.projected.set(d.x,0.2,d.y).project(this.controls.camera);const label=this.labels[d.id];
       label.style.maxWidth=`${Math.max(44,Math.min(140,3*this.width/(this.controls.camera.right-this.controls.camera.left)-4))}px`;
@@ -176,6 +178,7 @@ export class CityMap {
     }
   }
   dispose(){
+    this.network.svg.remove();
     this.observer.disconnect();
     const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>();
     this.scene.traverse(object=>{if(object instanceof THREE.Mesh||object instanceof THREE.Line||object instanceof THREE.Points){geometries.add(object.geometry);const list=Array.isArray(object.material)?object.material:[object.material];for(const material of list)materials.add(material);}});

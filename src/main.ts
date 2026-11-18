@@ -34,6 +34,10 @@ function start(){
   };
   const refresh=()=>{snapshot=getSnapshot(world);ui.update(snapshot);map.update(snapshot,draft??[],editor?.extending?editor.endpoint:undefined);ui.build(draft,editing,editor);tutorial.render();};
   const persist=()=>{if(!save(world,storage))ui.toast('saveError');};
+  const focus=(id?:number)=>{
+    map.focusedRoute=id;const all=document.getElementById('all-lines')!;all.hidden=!id;
+    if(id)all.textContent=t('allLines',{id});
+  };
   const cancel=()=>{draft=null;editing=undefined;editor=undefined;map.building=false;accumulator=0;refresh();};
   ui.onCommand=cmd=>{
     const result=applyCommand(world,cmd);if(!result.ok){ui.toast(result.error);return;}
@@ -42,10 +46,12 @@ function start(){
   };
   const begin=(id?:number,extending=false)=>{
     if(world.gameOver){ui.toast('gameOver');return;}
+    focus();
     editing=id;editor=new RouteDraft(id?world.routes.find(r=>r.id===id)!.stops:[],extending);draft=editor.stops;
     map.building=true;accumulator=0;ui.openPanel('map');refresh();
   };
   ui.onBuild=()=>begin();ui.onEdit=id=>begin(id);ui.onExtend=id=>{begin(id,true);tutorial.signal('extending');};ui.onCancel=()=>{cancel();ui.openPanel('routes');tutorial.signal('cancel');};
+  ui.onFocus=id=>{if(draft!==null)cancel();ui.openPanel('map');focus(id);if(id)map.recenter();refresh();};
   ui.onSuggest=stops=>{ui.mode=MODES.find(mode=>unlocked(world,mode)&&reserved(world,mode)>0)??ui.mode;begin();if(draft){editor!.stops=[...stops];draft=editor!.stops;refresh();tutorial.signal('planned');}};
   ui.onConfirm=()=>{
     if(!draft||!editor||editing&&!editor.changed)return;
@@ -78,7 +84,7 @@ function start(){
   };
   tutorial.onPrepare=()=>{cancel();ui.openPanel('map');};
   tutorial.onDone=()=>{cancel();ui.openPanel('map');};
-  ui.onTutorial=()=>tutorial.restart();ui.onPanel=tab=>{map.building=draft!==null&&tab==='map';tutorial.signal(tab);};
+  ui.onTutorial=()=>tutorial.restart();ui.onPanel=tab=>{focus();map.building=draft!==null&&tab==='map';tutorial.signal(tab);};
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&draft){cancel();tutorial.signal('cancel');}});
   document.addEventListener('visibilitychange',()=>{last=0;accumulator=0;audio.setBlocked(document.hidden);if(document.hidden)persist();});
   window.addEventListener('pagehide',persist);

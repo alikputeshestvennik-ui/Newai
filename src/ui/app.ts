@@ -20,6 +20,7 @@ export class GameUI {
   onSuggest: (stops: number[]) => void = () => {};
   onExtend: (id:number) => void = () => {};
   onEdit: (id:number) => void = () => {};
+  onFocus: (id?:number) => void = () => {};
   onDraft: (action:string,index?:number) => void = () => {};
   onCancel: () => void = () => {};
   onConfirm: () => void = () => {};
@@ -58,6 +59,8 @@ export class GameUI {
     const buildBar=document.getElementById('build-bar')!;
     new ResizeObserver(()=>host.style.setProperty('--build-height',`${buildBar.offsetHeight}px`)).observe(buildBar);
     const tools=document.querySelector<HTMLElement>('.map-tools')!;
+    const all=document.createElement('button');all.id='all-lines';all.hidden=true;
+    all.onclick=()=>this.onFocus();tools.append(all);
     new ResizeObserver(()=>host.style.setProperty('--tools-height',`${tools.offsetHeight}px`)).observe(tools);
     const board=document.getElementById('goal-board')!;
     new ResizeObserver(()=>host.style.setProperty('--goals-height',`${board.offsetHeight}px`)).observe(board);
@@ -126,6 +129,7 @@ export class GameUI {
       if(b.dataset.assign)this.onCommand({type:'assignVehicle',routeId:Number(b.dataset.assign)});
       if(b.dataset.release)this.onCommand({type:'releaseVehicle',routeId:Number(b.dataset.release)});
       if(b.dataset.edit)this.onEdit(Number(b.dataset.edit));
+      if(b.dataset.focus)this.onFocus(Number(b.dataset.focus));
       if(b.dataset.extend)this.onExtend(Number(b.dataset.extend));
       if(b.dataset.remove){const id=Number(b.dataset.remove);this.showDialog(`<h2>${t('removeTitle',{id})}</h2><p>${t('removeText')}</p><button id="remove-confirm" class="primary">${t('removeConfirm')}</button>`);click('remove-confirm',()=>{this.onCommand({type:'removeRoute',routeId:id});this.modal.close();});}
     };

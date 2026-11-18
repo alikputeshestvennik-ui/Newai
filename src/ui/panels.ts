@@ -9,7 +9,7 @@ export function routesPanel(w: World, mode: Mode): string {
   return `<div class="section-heading"><h2>${t('routes')}</h2><span>${w.routes.length}</span></div>
     <label>${t('transport')}<select id="route-mode">${MODES.map(m=>`<option value="${m}" ${m===mode?'selected':''} ${!unlocked(w,m)?'disabled':''}>${t(m)} · ${t('reserve',{count:reserved(w,m)})}</option>`).join('')}</select></label>
     <p class="transport-hint">${t('routeTransportHint')}</p><button class="primary wide" data-action="build">＋ ${t('buildRoute')}</button>`+w.routes.map(r=>`<article class="route-card">
-    <h3><i style="background:${D.colors[(r.id-1)%D.colors.length]}"></i>${t('route',{id:r.id})} · ${t(r.mode)}</h3>
+    <h3><i style="background:${D.colors[(r.id-1)%D.colors.length]}"></i>${t('route',{id:r.id})} · ${t(r.mode)} <button data-focus="${r.id}">${t('showLine')}</button></h3>
     <p>${r.stops.map(id=>t(w.districts[id].name)).join(' → ')}</p>
     <small>${t('vehicles',{count:r.vehicles})} · ${t('passengers',{count:number(r.served)})}<br>${t('routeHeadway',{count:number(headway(w,r))})}</small>
     ${!r.vehicles?`<p class="warning">${t('routePaused')}</p>`:''}${event?.id==='repair'&&r.stops.includes(event.district)?`<p class="warning">${t('routeBlocked')}</p>`:''}

@@ -17,6 +17,11 @@ header{height:44px}.header-actions button{padding:6px;width:44px}
 #layer-legend span{color:#244639}#layer-legend span::before{background:var(--layer-color);border:1px solid #234f3e55;width:6px;height:6px}
 #map[data-layers]:not([data-layers=""])::after{background:#11281e08;box-shadow:none}
 .stop-label{background:#f6f9edb8;font-size:9px;padding:3px 4px;max-width:100px}
+.network-ink{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.stop-label:not([data-badge=""])[data-badge]::before{content:attr(data-badge);display:block;color:#fff7dc;background:#244b4b;border-radius:4px;padding:0 3px;width:fit-content;max-width:100%;overflow:hidden;text-overflow:ellipsis;margin:auto;text-shadow:none}
+.stop-label.off-line:not(.analytical){opacity:.42}
+.route-card [data-focus]{margin-left:auto;font-size:11px;padding:4px 9px;min-height:44px}
+#all-lines{width:fit-content;background:#234f3e;color:#fff9dd;font-size:11px;padding:4px 10px;pointer-events:auto}
 .stop-label.analytical{background:#f6f9ede6;color:#244639;text-shadow:none;line-height:12px}
 .stop-label [data-value]{display:inline-block;font-size:8px;margin:0 2px;color:#244639;border-bottom:2px solid var(--layer-color)}
 #goal-board{display:none}.goals-open #goal-board{display:grid}
