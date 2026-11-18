@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -20,6 +21,7 @@ class BridgeTest(unittest.TestCase):
             spec = importlib.util.spec_from_file_location("bridge", Path(__file__).with_name("server.py"))
             cls.bridge = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(cls.bridge)
+        cls.run_app_server = staticmethod(cls.bridge.run_app_server)
         cls.server = cls.bridge.ThreadingHTTPServer(("127.0.0.1", 0), cls.bridge.Handler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
@@ -73,6 +75,71 @@ class BridgeTest(unittest.TestCase):
             task.status = "done"
             return subprocess.CompletedProcess(args, 0, answer, "")
         return run
+
+    def test_clarification_waits_for_answer_and_resumes_same_turn(self):
+        fixture = """
+import json
+import sys
+
+def read():
+    return json.loads(sys.stdin.readline())
+
+def send(**message):
+    print(json.dumps(message), flush=True)
+
+init = read()
+assert init["params"]["capabilities"]["experimentalApi"]
+send(id=init["id"], result={})
+read()  # initialized
+start = read()
+send(id=start["id"], result={"thread": {"id": "test-thread"}})
+turn = read()
+request_id = turn["id"]  # Server and client may use the same numeric ID.
+send(id=request_id, method="item/tool/requestUserInput", params={
+    "questions": [{"id": "theme", "question": "Какой цвет?", "options": [{"label": "Синий"}]}],
+})
+send(id=turn["id"], result={})
+reply = read()
+assert reply["id"] == request_id and reply["result"] == {
+    "answers": {"theme": {"answers": ["Синий"]}},
+}, reply
+send(method="turn/completed", params={"turn": {"status": "completed",
+    "items": [{"type": "agentMessage", "text": "Выбран синий."}]}})
+"""
+        real_popen = subprocess.Popen
+
+        def app_server_process(command, **kwargs):
+            self.assertIn("default_mode_request_user_input", command)
+            return real_popen([sys.executable, "-u", "-c", fixture], **kwargs)
+
+        def wait_for(predicate):
+            for _ in range(100):
+                _, snapshot = self.get_status(self.bridge.SECRET, "clarification-test")
+                if predicate(snapshot):
+                    return snapshot
+                time.sleep(0.03)
+            self.fail(f"Unexpected task snapshot: {snapshot}")
+
+        with patch.object(self.bridge, "run_app_server", side_effect=self.run_app_server), \
+             patch.object(subprocess, "Popen", side_effect=app_server_process):
+            token = self.bridge.SECRET
+            self.assertEqual(self.request(token, {"goal": "test", "task_id": "clarification-test"}, "/start")[0], 202)
+            pending = wait_for(lambda snapshot: snapshot.get("clarification"))
+            question = pending["clarification"]
+            self.assertNotIn("reasoning", pending)
+            self.assertEqual(question["questions"][0]["options"][0]["label"], "Синий")
+            self.assertEqual(pending["status"], "running")
+            self.assertEqual(pending["progress"], "Жду твоего ответа…")
+            answer = {"task_id": "clarification-test", "clarification_id": question["id"], "answers": {}}
+            self.assertEqual(self.request("wrong", answer, "/answer")[0], 401)
+            self.assertEqual(self.request(token, answer, "/answer")[0], 400)
+            answer["answers"] = {"theme": "Синий"}
+            self.assertEqual(self.request(token, answer, "/answer")[0], 200)
+            finished = wait_for(lambda snapshot: snapshot.get("status") in {"done", "failed"})
+            self.assertEqual(finished["status"], "done", finished)
+            self.assertEqual(finished["answer"], "Выбран синий.")
+            self.assertIsNone(finished["clarification"])
+            self.assertEqual(self.request(token, answer, "/answer")[0], 409)
 
     def test_token_created_and_private(self):
         token = Path(self.temp.name, "token")

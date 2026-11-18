@@ -103,7 +103,9 @@ object AppNav {
     fun init(ctx: Context) { this.ctx = ctx.applicationContext }
     fun stop(session: CodexSession) {
         session.pending = ""
-        scope.launch { runCatching { CodexGateway.cancel(ctx, session.taskId) } }
+        session.pendingFiles = emptyList()
+        val taskId = session.taskId
+        scope.launch { runCatching { CodexGateway.cancel(ctx, taskId) } }
     }
 }
 
@@ -146,7 +148,7 @@ class CodexSession(
     var providerId by mutableStateOf("")
     var model by mutableStateOf("")
     var busy by mutableStateOf(false)
-    var progress by mutableStateOf("")
+    var activity by mutableStateOf(CodexActivity())
     var pending by mutableStateOf("")
     var reasoningEffort by mutableStateOf("medium")
 }
@@ -226,11 +228,12 @@ object Sessions {
 
     fun remove(id: String) {
         val session = find(id) ?: return
+        if (session.busy) AppNav.stop(session)
         if (list.size <= 1) {
             session.messages.clear()
             session.draft = ""
             session.attachments.clear()
-            session.progress = ""
+            session.activity = CodexActivity()
             session.taskId = newTaskId()
             save()
             return

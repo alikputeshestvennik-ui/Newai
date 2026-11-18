@@ -53,41 +53,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 data class CodexActivity(
     val running: Boolean = false,
     val progress: String = "",
     val answer: String = "",
+    val clarification: CodexClarification? = null,
 )
-
-@Composable
-fun rememberCodexActivity(session: CodexSession): CodexActivity {
-    var state by remember(session.id) { mutableStateOf(CodexActivity()) }
-    LaunchedEffect(session.id, session.taskId, session.busy) {
-        if (!session.busy) {
-            state = CodexActivity()
-            return@LaunchedEffect
-        }
-        while (true) {
-            val snapshot = withContext(Dispatchers.IO) {
-                runCatching { CodexGateway.status(AppNav.ctx, session.taskId) }.getOrNull()
-            }
-            if (snapshot != null) {
-                state = CodexActivity(
-                    running = snapshot.optString("status") in setOf("queued", "running"),
-                    progress = snapshot.optString("progress").trim(),
-                    answer = snapshot.optString("answer").trim(),
-                )
-            }
-            delay(900)
-        }
-    }
-    return state
-}
 
 @Composable
 private fun CodexBarButton(icon: ImageVector, label: String, size: Int = 40, onClick: () -> Unit) {

@@ -80,6 +80,47 @@ class Task:
         self.files: list[dict] = []
         self.usage: dict | None = None
         self.lock = threading.Lock()
+        self.clarifications: dict[str, dict] = {}
+
+    def add_clarification(self, request_id: int | str, questions: list[dict]) -> None:
+        with self.lock:
+            self.clarifications[secrets.token_urlsafe(16)] = {
+                "rpc_id": request_id, "questions": questions, "answers": None,
+            }
+
+    def answer_clarification(self, clarification_id: str, answers: dict) -> int:
+        with self.lock:
+            pending = self.clarifications.get(clarification_id)
+            if self.status != "running" or pending is None:
+                return 409
+            if answers.keys() != {question["id"] for question in pending["questions"]}:
+                return 400
+            if any(not isinstance(answer, str) or not answer.strip() or len(answer) > 4000
+                   for answer in answers.values()):
+                return 400
+            if pending["answers"] is not None:
+                return 200 if pending["answers"] == answers else 409
+            pending["answers"] = answers
+            return 200
+
+    def take_clarification_responses(self) -> list[dict]:
+        with self.lock:
+            ready = [key for key, pending in self.clarifications.items() if pending["answers"] is not None]
+            responses = []
+            for key in ready:
+                pending = self.clarifications.pop(key)
+                responses.append({
+                    "id": pending["rpc_id"],
+                    "result": {"answers": {qid: {"answers": [answer]} for qid, answer in pending["answers"].items()}},
+                })
+            return responses
+
+    def current_clarification(self) -> dict | None:
+        with self.lock:
+            for key, pending in self.clarifications.items():
+                if pending["answers"] is None:
+                    return {"id": key, "questions": pending["questions"]}
+        return None
 
     def _refresh_reasoning(self) -> None:
         self.last_reasoning = "\n\n".join(v for v in self.reasoning_items.values() if v.strip())
@@ -133,14 +174,15 @@ class Task:
         self._refresh_answer()
 
     def snapshot(self) -> dict:
+        clarification = self.current_clarification()
         return {
             "task_id": self.id,
             "status": self.status,
             "started": self.started,
             "finished": self.finished,
-            "reasoning": self.last_reasoning[-60000:],
             "answer": self.last_answer[-16000:],
-            "progress": self.progress,
+            "progress": "Жду твоего ответа…" if clarification else self.progress,
+            "clarification": clarification,
             "error": self.error[-2000:],
             "tool_error": self.last_tool_error[-2000:],
             "tool_successes": self.tool_successes,
@@ -414,6 +456,14 @@ def run_process(task: Task, command: list[str], prompt: str, env: dict, output: 
     finally:
         out_thread.join(2)
         err_thread.join(2)
+        for reader in readers:
+            reader.join(timeout=1)
+        for pipe in (process.stdin, process.stdout, process.stderr):
+            if pipe is not None:
+                with contextlib.suppress(OSError):
+                    pipe.close()
+        with task.lock:
+            task.clarifications.clear()
         task.process = None
         task.returncode = process.returncode
         task.finished = time.time()
@@ -568,8 +618,9 @@ def run_app_server(task: Task, options: list[str], model_id: str, model_provider
             if len(joined) > MAX_STDERR * 2:
                 stderr_chunks[:] = [joined[-MAX_STDERR:]]
 
-    threading.Thread(target=read_stdout, daemon=True).start()
-    threading.Thread(target=read_stderr, daemon=True).start()
+    readers = [threading.Thread(target=read, daemon=True) for read in (read_stdout, read_stderr)]
+    for reader in readers:
+        reader.start()
 
     def stderr_text() -> str:
         return "".join(stderr_chunks)[-MAX_STDERR:]
@@ -585,11 +636,18 @@ def run_app_server(task: Task, options: list[str], model_id: str, model_provider
 
     def receive(deadline: float | None, fallback: bool) -> dict:
         while True:
+            for response in task.take_clarification_responses():
+                try:
+                    send({"jsonrpc": "2.0", **response})
+                except AppServerUnavailable as exc:
+                    if process.poll() == -signal.SIGKILL:
+                        raise AppServerStopped() from exc
+                    raise RuntimeError("Соединение с Codex закрылось при отправке ответа") from exc
             remaining = deadline - time.time() if deadline is not None else None
             if remaining is not None and remaining <= 0:
                 raise subprocess.TimeoutExpired(command, timeout)
             try:
-                line = stream.get(timeout=min(0.5, remaining) if remaining is not None else 0.5)
+                line = stream.get(timeout=min(0.25, remaining) if remaining is not None else 0.25)
             except queue.Empty:
                 if process.poll() is not None and stream.empty():
                     if process.returncode == -signal.SIGKILL:
@@ -611,6 +669,24 @@ def run_app_server(task: Task, options: list[str], model_id: str, model_provider
             if isinstance(message, dict):
                 return message
 
+    def handle_server_request(message: dict) -> bool:
+        if "id" not in message or "method" not in message:
+            return False
+        method = message["method"]
+        request_id = message["id"]
+        if method == "item/tool/requestUserInput":
+            questions = (message.get("params") or {}).get("questions")
+            if (isinstance(questions, list) and questions
+                and all(isinstance(q, dict) and isinstance(q.get("id"), str)
+                        and isinstance(q.get("question"), str) for q in questions)):
+                task.add_clarification(request_id, questions)
+                return True
+            code, error = -32602, "Invalid clarification questions"
+        else:
+            code, error = -32601, "Unsupported server request"
+        send({"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": error}})
+        return True
+
     counter = 0
 
     def next_id() -> int:
@@ -624,6 +700,8 @@ def run_app_server(task: Task, options: list[str], model_id: str, model_provider
         deadline = time.time() + limit
         while True:
             message = receive(deadline, fallback)
+            if handle_server_request(message):
+                continue
             if message.get("id") == message_id:
                 error = message.get("error")
                 if error:
@@ -634,7 +712,10 @@ def run_app_server(task: Task, options: list[str], model_id: str, model_provider
             handle_app_notification(task, message)
 
     try:
-        request("initialize", {"clientInfo": {"name": "vibecoder", "version": "1.0.0"}}, 30, True)
+        request("initialize", {
+            "clientInfo": {"name": "vibecoder", "version": "1.0.0"},
+            "capabilities": {"experimentalApi": True},
+        }, 30, True)
         send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
         params: dict = {
             "cwd": str(workspace),
@@ -653,10 +734,22 @@ def run_app_server(task: Task, options: list[str], model_id: str, model_provider
             raise AppServerUnavailable("app-server did not return a thread id")
         turn_request = next_id()
         send({"jsonrpc": "2.0", "id": turn_request, "method": "turn/start",
-              "params": {"threadId": thread_id, "input": [{"type": "text", "text": prompt}]}})
+              "params": {"threadId": thread_id, "input": [{"type": "text", "text": (
+                  "Когда для продолжения нужен ответ пользователя, вызови request_user_input. "
+                  "Сформулируй короткий вопрос и предложи варианты, если они известны. "
+                  "Дождись ответа инструмента.\n\n" + prompt
+              )}]}})
         deadline = time.time() + timeout if timeout is not None else None
         while True:
             message = receive(deadline, False)
+            if handle_server_request(message):
+                continue
+            if message.get("method") == "serverRequest/resolved":
+                resolved = (message.get("params") or {}).get("requestId")
+                with task.lock:
+                    for key, pending in list(task.clarifications.items()):
+                        if pending["rpc_id"] == resolved:
+                            del task.clarifications[key]
             if message.get("id") == turn_request:
                 error = message.get("error")
                 if error:
@@ -675,6 +768,14 @@ def run_app_server(task: Task, options: list[str], model_id: str, model_provider
             os.killpg(process.pid, signal.SIGKILL)
         with contextlib.suppress(Exception):
             process.wait(timeout=5)
+        for reader in readers:
+            reader.join(timeout=1)
+        for pipe in (process.stdin, process.stdout, process.stderr):
+            if pipe is not None:
+                with contextlib.suppress(OSError):
+                    pipe.close()
+        with task.lock:
+            task.clarifications.clear()
         task.process = None
         task.returncode = process.returncode
         task.finished = time.time()
@@ -848,7 +949,7 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
             result = run_app_server(
                 task,
                 runtime_options + provider_options + effort_options
-                + ["-c", 'model_reasoning_summary="detailed"'],
+                + ["--enable", "default_mode_request_user_input"],
                 model_id,
                 "ten_provider" if backend else None,
                 workspace,
@@ -857,6 +958,7 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
                 None,
             )
         except AppServerStopped:
+            task.status = "cancelled"
             return 409, {"error": "Задача остановлена", "task_id": task.id}
         except AppServerUnavailable:
             result = run_process(task, command, goal, env, output, None)
@@ -867,6 +969,7 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
             task.error = message
             return 503, {"error": message, "task_id": task.id}
         if result.returncode == -signal.SIGKILL:
+            task.status = "cancelled"
             return 409, {"error": "Задача остановлена", "task_id": task.id}
         if result.returncode != 0:
             details = task.error or diagnostic[-1000:]
@@ -888,14 +991,18 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
             task.status = "failed"
             task.error = message
             return 502, {"error": message, "task_id": task.id}
-        task.status = "done"
         task.last_answer = answer[-8000:]
         task.files = changed_files(workspace, before_files)
+        task.status = "done"
         return 200, {"result": answer, "task_id": task.id, "files": task.files}
     except subprocess.TimeoutExpired:
         task.status = "timeout"
         task.error = "Время задачи истекло"
         return 504, {"error": task.error, "task_id": task.id}
+    except RuntimeError as exc:
+        task.status = "failed"
+        task.error = str(exc)[-2000:]
+        return 502, {"error": task.error, "task_id": task.id}
     except (OSError, UnicodeError) as exc:
         message = "Не удалось запустить локальный Codex: " + str(exc)[:200]
         task.status = "failed"
@@ -954,7 +1061,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
-        if path not in {"/run", "/start", "/cancel"}:
+        if path not in {"/run", "/start", "/cancel", "/answer"}:
             return self.reply(404, {"error": "Неизвестный адрес"})
         if not self.authorized():
             return self.reply(401, {"error": "Проверь ключ локального окружения"})
@@ -970,6 +1077,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/cancel":
             task_id = request.get("task_id")
             return self.reply(200, {"stopped": stop_task(safe_task_id(task_id) if task_id else None)})
+        if path == "/answer":
+            task_id = safe_task_id(request.get("task_id"))
+            clarification_id = request.get("clarification_id")
+            answers = request.get("answers")
+            if not isinstance(clarification_id, str) or not isinstance(answers, dict):
+                return self.reply(400, {"error": "Некорректный ответ"})
+            with TASKS_LOCK:
+                task = TASKS.get(task_id)
+            status = task.answer_clarification(clarification_id, answers) if task else 409
+            if status == 200:
+                return self.reply(200, {"accepted": True})
+            error = "Уточнение уже закрыто" if status == 409 else "Ответь на все вопросы"
+            return self.reply(status, {"error": error})
         try:
             goal = request["goal"]
             if not isinstance(goal, str) or not 0 < len(goal) <= 16000:

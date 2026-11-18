@@ -61,6 +61,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,7 +85,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -174,7 +178,13 @@ private fun artifactAspectRatio(file: Docs.FileRef): Float {
 fun CodexScreen(onSettings: () -> Unit) {
     val ctx = LocalContext.current
     val session = Sessions.current
-    val activity = rememberCodexActivity(session)
+    val activity = session.activity
+    val clarification = activity.clarification
+    val scope = rememberCoroutineScope()
+    var laterId by rememberSaveable(session.id) { mutableStateOf<String?>(null) }
+    var submittingId by remember(session.id) { mutableStateOf<String?>(null) }
+    var answeredId by remember(session.id) { mutableStateOf<String?>(null) }
+    var replyError by remember(clarification?.id) { mutableStateOf<String?>(null) }
     val list = rememberLazyListState()
     var composerFocused by remember { mutableStateOf(false) }
     var composerH by remember { mutableIntStateOf(190) }
@@ -260,6 +270,9 @@ fun CodexScreen(onSettings: () -> Unit) {
                     style = body(11, color = Muted), modifier = Modifier.padding(start = 8.dp, bottom = 4.dp))
             }
             CodexRunBubble(activity)
+            if (clarification != null && clarification.id != answeredId && laterId == clarification.id) {
+                TextButton(onClick = { laterId = null }) { Text("Ответить на уточнение") }
+            }
             hint?.let { Text(it, style = body(12, color = Danger), modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) }
             if (composerFocused) CodexKeyboardBar(session)
             if (session.attachments.isNotEmpty()) {
@@ -292,7 +305,7 @@ fun CodexScreen(onSettings: () -> Unit) {
                     Icon(rememberVectorPainter(icClip), "Прикрепить файл", tint = Muted,
                         modifier = Modifier.size(36.dp).clickable { attachPick.launch(arrayOf("*/*")) }.padding(6.dp))
                 }
-                val canSend = session.draft.isNotBlank() || session.attachments.isNotEmpty()
+                val canSend = clarification == null && (session.draft.isNotBlank() || session.attachments.isNotEmpty())
                 val showStop = session.busy && !canSend
                 Box(Modifier.align(Alignment.BottomEnd)) {
                     androidx.compose.runtime.key(session.id) {
@@ -308,6 +321,50 @@ fun CodexScreen(onSettings: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (clarification != null && clarification.id != laterId && clarification.id != answeredId) {
+        CodexClarificationDialog(
+            clarification = clarification,
+            submitting = submittingId == clarification.id,
+            error = replyError,
+            onLater = { laterId = clarification.id },
+            onAnswer = { answers ->
+                if (submittingId == null) {
+                    submittingId = clarification.id
+                    replyError = null
+                    val taskId = session.taskId
+                    val afterMessage = session.messages.lastOrNull { it.mine }?.id
+                    scope.launch {
+                        try {
+                            val accepted = withContext(Dispatchers.IO) {
+                                CodexGateway.answerClarification(ctx, taskId, clarification.id, answers)
+                            }
+                            answeredId = clarification.id
+                            if (accepted && session.taskId == taskId) {
+                                val question = clarification.questions.joinToString("\n") { it.text }
+                                val reply = clarification.questions.joinToString("\n") {
+                                    if (it.secret) "••••••" else answers.getValue(it.id)
+                                }
+                                val history = session.messages
+                                val lastUser = history.indexOfFirst { it.id == afterMessage }
+                                if (lastUser >= 0) {
+                                    history.add(lastUser + 1, Message(role = "codex", text = question))
+                                    history.add(lastUser + 2, Message(role = "me", text = reply))
+                                }
+                                Sessions.save()
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            replyError = e.message ?: "Не удалось отправить ответ"
+                        } finally {
+                            submittingId = null
+                        }
+                    }
+                }
+            },
+        )
     }
 
     if (askDelete) {

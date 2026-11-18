@@ -14,7 +14,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -65,7 +64,11 @@ class TaskService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         startForeground(1, NotificationCompat.Builder(this, "tasks")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(if (activeTasks > 1) "Вайбкодер · задач: $activeTasks" else "Вайбкодер · Codex работает")
+            .setContentTitle(when {
+                session.activity.clarification != null -> "Вайбкодер ждёт ответа"
+                activeTasks > 1 -> "Вайбкодер · задач: $activeTasks"
+                else -> "Вайбкодер · Codex работает"
+            })
             .setContentText(session.name)
             .setContentIntent(open).setOngoing(true).build())
     }
@@ -102,32 +105,39 @@ class TaskService : Service() {
                 Sessions.save()
                 val goal = Sessions.prompt(session, text, files)
                 val key = runCatching { Providers.key(applicationContext, providerId) }.getOrDefault("")
-                val poll = scope.launch {
-                    while (scope.isActive) {
-                        delay(1500)
-                        val snapshot = withContext(Dispatchers.IO) { runCatching { CodexGateway.status(applicationContext, session.taskId) }.getOrNull() }
-                        if (snapshot != null) session.progress = snapshot.optString("progress").ifBlank { snapshot.optString("status") }
-                    }
-                }
+                val taskId = session.taskId
+                session.activity = CodexActivity(running = true)
                 val startedAt = android.os.SystemClock.elapsedRealtime()
                 try {
                     val answer = withContext(Dispatchers.IO) {
-                        CodexGateway.run(applicationContext, goal, model, session.taskId,
+                        CodexGateway.run(applicationContext, goal, model, taskId,
                             CodexGateway.RunProvider(provider.kind, provider.baseUrl, key),
-                            session.reasoningEffort.ifBlank { "medium" })
+                            session.reasoningEffort.ifBlank { "medium" }) { activity ->
+                            withContext(Dispatchers.Main) {
+                                if (session.taskId == taskId) {
+                                    val changed = session.activity.clarification?.id != activity.clarification?.id
+                                    session.activity = activity
+                                    if (changed && activity.clarification != null) startForegroundNow(session, work.size)
+                                    else if (changed) {
+                                        work.keys.mapNotNull(Sessions::find).firstOrNull { it.activity.clarification != null }
+                                            .let { startForegroundNow(it ?: session, work.size) }
+                                    }
+                                }
+                            }
+                        }
                     }
+                    if (session.taskId != taskId) break
                     session.messages += Message(role = "codex", text = answer.text, files = answer.files,
                         durationMs = android.os.SystemClock.elapsedRealtime() - startedAt, usage = answer.usage)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     val message = e.message ?: "Не удалось выполнить задачу"
-                    if (session.pending.isBlank() && session.pendingFiles.isEmpty()) {
+                    if (session.taskId == taskId && session.pending.isBlank() && session.pendingFiles.isEmpty()) {
                         session.messages += Message(role = "system", text = message)
                     }
                 } finally {
-                    poll.cancel()
-                    session.progress = ""
+                    session.activity = CodexActivity()
                     Sessions.save()
                 }
                 next = session.pending.ifBlank { null }
@@ -135,7 +145,7 @@ class TaskService : Service() {
             }
         } finally {
             session.busy = false
-            session.progress = ""
+            session.activity = CodexActivity()
             Sessions.save()
             work.remove(session.id)
             if (work.isEmpty()) {

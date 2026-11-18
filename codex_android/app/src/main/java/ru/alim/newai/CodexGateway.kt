@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -87,6 +88,22 @@ object CodexGateway {
             check(response.isSuccessful) { "Не удалось остановить задачу" }
         }
     }
+    fun answerClarification(ctx: Context, taskId: String, id: String, answers: Map<String, String>): Boolean {
+        val body = JSONObject().put("task_id", taskId).put("clarification_id", id)
+            .put("answers", JSONObject(answers))
+        val request = Request.Builder().url("http://127.0.0.1:18766/answer")
+            .header("Authorization", "Bearer " + token(ctx))
+            .post(body.toString().toRequestBody("application/json".toMediaType())).build()
+        return control.newCall(request).execute().use { response ->
+            if (response.code == 409) return@use false
+            check(response.isSuccessful) {
+                runCatching { JSONObject(response.body?.string().orEmpty()).optString("error") }
+                    .getOrNull().orEmpty().ifBlank { "Не удалось отправить ответ" }
+            }
+            true
+        }
+    }
+
     data class Result(val text: String, val files: List<Docs.FileRef>, val usage: TokenUsage?)
 
     private fun parseFiles(ctx: Context, array: org.json.JSONArray?): List<Docs.FileRef> {
@@ -136,7 +153,11 @@ object CodexGateway {
         throw lastError ?: java.io.IOException("Не удалось запустить локальный Codex")
     }
 
-    fun run(ctx: Context, goal: String, selected: String, taskId: String = "default", runProvider: RunProvider? = null, reasoningEffort: String = "medium"): Result {
+    suspend fun run(
+        ctx: Context, goal: String, selected: String, taskId: String = "default",
+        runProvider: RunProvider? = null, reasoningEffort: String = "medium",
+        onActivity: suspend (CodexActivity) -> Unit = {},
+    ): Result {
         require(goal.length <= 16000) { "Задача слишком длинная" }
         val routed = ModelRouting.codexModel(selected)
         EmbeddedRuntime.startAsync(ctx)
@@ -169,7 +190,8 @@ object CodexGateway {
         while (true) {
             try {
                 val snapshot = status(ctx, jobId)
-                when (snapshot.optString("status")) {
+                val status = snapshot.optString("status")
+                when (status) {
                     "done" -> return answerFrom(ctx, snapshot)
                     "failed", "timeout" -> {
                         val reason = snapshot.optString("error").ifBlank { "Локальный Codex завершился с ошибкой" }
@@ -181,6 +203,12 @@ object CodexGateway {
                     }
                     "cancelled" -> error("Задача остановлена")
                 }
+                onActivity(CodexActivity(
+                    running = status == "queued" || status == "running",
+                    progress = snapshot.optString("progress").trim(),
+                    answer = snapshot.optString("answer").trim(),
+                    clarification = CodexClarification.fromJson(snapshot.optJSONObject("clarification")),
+                ))
                 failures = 0
             } catch (e: java.io.IOException) {
                 failures++
@@ -198,7 +226,7 @@ object CodexGateway {
                 failures++
                 if (failures >= 20) error("Локальный Codex вернул некорректный ответ")
             }
-            Thread.sleep(if (failures == 0) 700 else 1500)
+            delay(if (failures == 0) 700 else 1500)
         }
     }
 }
