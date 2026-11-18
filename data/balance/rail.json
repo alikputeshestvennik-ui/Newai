@@ -1,0 +1,5 @@
+{
+  "trackZ": 11.45,
+  "platforms": ["station", "south", "embankment", "newRiver"],
+  "platformXs": [1, 4, 7, 13]
+}

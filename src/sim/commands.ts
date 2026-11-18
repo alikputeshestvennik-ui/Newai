@@ -1,4 +1,5 @@
 import { E, T, MODES } from './config';
+import { allowedStop } from './alignment';
 import { routeLength } from './demand';
 import { updateGoals } from './goals';
 import { decide } from '../story/folder';
@@ -26,6 +27,7 @@ export function applyCommand(w: World, cmd: Command): Result {
     if(cmd.type==='editRoute'&&!old) return fail('invalidRoute');
     const mode=old?.mode ?? (cmd.type==='buildRoute'?cmd.mode:undefined) ?? 'marshrutka';
     if(!MODES.includes(mode))return fail('invalidCommand');
+    if(cmd.stops.some(id=>!allowedStop(mode,w.districts[id])))return fail('railPlatforms');
     if(!old){
       if(!unlocked(w,mode))return fail('modeLocked');
       if(w.routes.length>=E.maxRoutes)return fail('routeLimit');

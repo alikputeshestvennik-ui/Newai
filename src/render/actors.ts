@@ -4,6 +4,7 @@ import type { World } from '../sim/types';
 import type { Quality } from '../core/settings';
 import { eventConfig } from '../sim/events';
 import { D, T } from '../sim/config';
+import { alignment } from '../sim/alignment';
 import { roadPath } from '../sim/roads';
 const merged = (parts: THREE.BufferGeometry[]) => { const geometry=mergeGeometries(parts);parts.forEach(p=>p.dispose());return geometry; };
 export class Actors {
@@ -41,8 +42,8 @@ export class Actors {
     this.taxiPath=[...roadPath(D.districts[0],D.districts[8]),...roadPath(D.districts[8],D.districts[9]).slice(1),...roadPath(D.districts[9],D.districts[0]).slice(1)].map(p=>new THREE.Vector3(p[0],.23,p[1]));
   }
   updatePaths(w:World){
-    const signature=JSON.stringify(w.routes.map(r=>r.stops));if(signature===this.signature)return;this.signature=signature;
-    this.paths=w.routes.map(r=>r.stops.slice(1).flatMap((id,i)=>roadPath(w.districts[r.stops[i]],w.districts[id]).map(p=>new THREE.Vector3(p[0],.23,p[1]))));
+    const signature=JSON.stringify(w.routes.map(r=>[r.mode,r.stops]));if(signature===this.signature)return;this.signature=signature;
+    this.paths=w.routes.map(r=>r.stops.slice(1).flatMap((id,i)=>alignment(r.mode,w.districts[r.stops[i]],w.districts[id]).map(p=>new THREE.Vector3(p[0],.23,p[1]))));
     this.lengths=this.paths.map(path=>path.reduce((s,p,i)=>i?s+p.distanceTo(path[i-1]):0,0));
   }
   private position(path:THREE.Vector3[],progress:number,reverse:boolean,sx:number,sz:number){
@@ -58,10 +59,10 @@ export class Actors {
     this.updatePaths(w);let cars=0,poles=0;const event=eventConfig(w),detail=zoom>1.35;
     for(let i=0;i<w.routes.length;i++){
       const route=w.routes[i],path=this.paths[i],length=this.lengths[i];
-      if(!length||(event?.id==='repair'&&route.stops.includes(event.district)))continue;
+      if(route.mode==='metro'||!length||(event?.id==='repair'&&route.stops.includes(event.district)))continue;
       for(let v=0;v<route.vehicles;v++){
         let progress=(time*.65/T[route.mode].minutesPerUnit*(event?.speed??1)+v*length*2/Math.max(1,route.vehicles))%(length*2);const reverse=progress>length;if(reverse)progress=length*2-progress;
-        if(!this.position(path,progress,reverse,route.mode==='marshrutka'?1:1.25,route.mode==='tram'?2.1:route.mode==='marshrutka'?1:1.65))continue;
+        if(!this.position(path,progress,reverse,route.mode==='marshrutka'?1:1.25,route.mode==='suburban'?3:route.mode==='tram'?2.1:route.mode==='marshrutka'?1:1.65))continue;
         this.carParts.forEach(part=>part.setMatrixAt(cars,this.matrix));this.color.set(D.colors[(route.id-1)%D.colors.length]);this.carParts[0].setColorAt(cars++,this.color);
         if(route.mode==='tram'||route.mode==='trolleybus')this.poles.setMatrixAt(poles++,this.matrix);
       }

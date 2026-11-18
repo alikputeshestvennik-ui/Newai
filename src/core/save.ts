@@ -2,6 +2,7 @@ import { E, D, MODES, EVENTS } from '../sim/config';
 import { createWorld } from '../sim/world';
 import { C, initialDevelopment, initialExpansion } from '../sim/development';
 import { initializeGoals, validGoals } from '../sim/goals';
+import { allowedStop } from '../sim/alignment';
 import { validStory } from '../story/folder';
 import type { World } from '../sim/types';
 export const LEGACY_KEY = 'gorodskoy-marshrut:stage1:v1';
@@ -10,7 +11,7 @@ const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFi
 export function restore(raw: string): World | null {
   try {
     const parsed = JSON.parse(raw);
-    if (!parsed || ![1,2,3,4,5].includes(parsed.version)) return null;
+    if (!parsed || ![1,2,3,4,5,6].includes(parsed.version)) return null;
     const base = createWorld();
     if(parsed.version===1){
       parsed.version=2;parsed.ecology=base.ecology;parsed.debt=0;parsed.gameOver=false;
@@ -26,6 +27,9 @@ export function restore(raw: string): World | null {
       parsed.expansion = initialExpansion(parsed.minute); parsed.mobility = base.mobility; parsed.version = 3;
     }
     if (parsed.version < 5 && parsed.ledger) { parsed.ledger.storyReceipts=0; parsed.ledger.storyPayments=0; }
+    if (parsed.version < 6 && parsed.fleets && parsed.wear) {
+      for (const mode of ['metro','suburban']) { parsed.fleets[mode]=0; parsed.wear[mode]=0; }
+    }
     const w=parsed as World;
     for (const [key, val] of Object.entries(base)) if (typeof val === 'number' && !finite(w[key as keyof World])) return null;
     if (!Number.isInteger(w.seed) || w.seed < 0 || w.seed > 0xffffffff || !Number.isInteger(w.minute) || w.minute < 0 || w.minute % E.minutesPerTick || w.remainder < 0 || w.remainder >= E.minutesPerTick || w.fare < E.fareMin || w.fare > E.fareMax || w.satisfaction < 0 || w.satisfaction > 100 || w.trust < 0 || w.trust > 100) return null;
@@ -46,7 +50,7 @@ export function restore(raw: string): World | null {
     if(w.event!==null && (!validEvent(w.event) || !Number.isInteger(w.event.until) || w.event.until<=w.minute || w.event.until%E.minutesPerTick || w.nextEvent.at<=w.event.until))return null;
     const ids = new Set<number>();
     for (const r of w.routes) {
-      if (!r || !MODES.includes(r.mode) || !Number.isInteger(r.id) || r.id < 1 || ids.has(r.id) || !Number.isInteger(r.vehicles) || r.vehicles < 0 || !finite(r.served) || r.served < 0 || !Array.isArray(r.stops) || r.stops.length < 2 || new Set(r.stops).size !== r.stops.length || r.stops.some(i => !Number.isInteger(i) || !w.districts[i])) return null;
+      if (!r || !MODES.includes(r.mode) || !Number.isInteger(r.id) || r.id < 1 || ids.has(r.id) || !Number.isInteger(r.vehicles) || r.vehicles < 0 || !finite(r.served) || r.served < 0 || !Array.isArray(r.stops) || r.stops.length < 2 || new Set(r.stops).size !== r.stops.length || r.stops.some(i => !Number.isInteger(i) || !w.districts[i] || !allowedStop(r.mode,w.districts[i]))) return null;
       ids.add(r.id);
     }
     if(MODES.some(mode=>w.routes.filter(r=>r.mode===mode).reduce((s,r)=>s+r.vehicles,0)>w.fleets[mode]))return null;
@@ -55,7 +59,8 @@ export function restore(raw: string): World | null {
     if (!Array.isArray(w.queues) || w.queues.length !== w.districts.length || w.queues.some(q => !Array.isArray(q) || q.length !== w.districts.length || q.some(n => !finite(n) || n < 0))) return null;
     if (w.served < 0 || w.missed < 0 || w.income < 0 || w.expenses < 0 || w.lastGrowth < 0) return null;
     if (parsed.version === 3) initializeGoals(w);
-    if (parsed.version < 5) { w.story = []; w.version = 5; }
+    if (parsed.version < 5) w.story = [];
+    w.version = 6;
     return validGoals(w) && validStory(w.story) ? w : null;
   } catch { return null; }
 }

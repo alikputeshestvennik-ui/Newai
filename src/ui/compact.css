@@ -70,3 +70,4 @@ nav{box-shadow:0 3px 10px #284c3018}nav button{font-size:11px}
 .tutorial-open #goal-toggle{display:none}
 .tutorial-open[data-tutorial-step="plan"] #goal-board{display:grid}
 .tutorial-open:not([data-tutorial-step="plan"]) #goal-board{display:none}
+.stop-label.off-platform { opacity: .35; }

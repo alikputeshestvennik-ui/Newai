@@ -33,7 +33,7 @@ describe('живой город', () => {
   });
   it('переносит v2, не теряет таймер строительства и продолжает тот же город', () => {
     const old:any=createWorld();old.version=2;delete old.development;delete old.expansion;delete old.mobility;
-    const w=restore(JSON.stringify(old))!;expect(w.version).toBe(5);expect(w.money).toBe(old.money);
+    const w=restore(JSON.stringify(old))!;expect(w.version).toBe(6);expect(w.money).toBe(old.money);
     step(w,E.minutesPerDay);const copy=restore(JSON.stringify(w))!;
     step(w,3*E.minutesPerDay);step(copy,3*E.minutesPerDay);expect(copy).toEqual(w);
     for(const change of [(s:any)=>s.development[0].growthRemainder=2,(s:any)=>s.development[0].phase='bad',(s:any)=>s.expansion={index:99,since:0,until:999999},(s:any)=>s.mobility.taxi=-1]){const invalid=structuredClone(w);change(invalid);expect(restore(JSON.stringify(invalid))).toBeNull();}

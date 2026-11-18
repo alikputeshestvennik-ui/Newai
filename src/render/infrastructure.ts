@@ -1,3 +1,4 @@
+import { railway } from '../sim/alignment';
 import * as THREE from 'three';
 import { CityGeometry } from './geometry';
 import { roadSegments } from '../sim/roads';
@@ -44,9 +45,9 @@ export function infrastructure(scene: THREE.Scene) {
   box('#f6e4b8',0,.76,9.66,.36,.5,.06); g.add('cylinder','#fff5d5',0,.84,9.61,.23,.04,.23,Math.PI/2);
   box('#516b77',-.06,.49,10.65,1.7,.09,.63);
   for (const x of [-.7,.65]) box('#7c827c',x,.27,10.65,.055,.48,.06);
-  for (const z of [11.3,11.6]) box('#7e827c',5.5,.13,z,14,.05,.035);
-  for (let x=-1; x<13; x+=.35) box('#92836e',x,.08,11.45,.13,.06,.5);
-  for (let i=0;i<3;i++) { box('#4d858e',.2+i*.75,.32,11.45,.68,.32,.27);box('#b3d7d8',.2+i*.75,.39,11.45,.49,.1,.29); }
+  for (const z of [11.3,11.6]) box('#7e827c',6,.13,z,15,.05,.035);
+  for (let x=-1; x<13.5; x+=.35) box('#92836e',x,.08,11.45,.13,.06,.5);
+  for(const platform of railway.platformXs){box('#d4bd92',platform,.16,railway.trackZ-.38,1.1,.16,.38);box('#f5d179',platform,.25,railway.trackZ-.22,1.1,.025,.04);}
   // Hospital wings and red cross, university columns and pediment.
   box('#e6e4d6',6,.6,3,.86,1.08,.62);box('#b5c9c4',6,.3,3,.4,.5,1.15);
   box('#cc5650',6,.91,3.32,.3,.08,.035);box('#cc5650',6,.91,3.33,.08,.3,.035);

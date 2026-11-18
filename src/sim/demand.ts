@@ -1,4 +1,4 @@
-import { roadDistance } from './roads';
+import { lineDistance } from './alignment';
 import { E, D, T } from './config';
 import type { District, Route, World } from './types';
 export const distance = (a: District, b: District) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
@@ -24,7 +24,7 @@ export function modeShares(transitTime: number, fare: number, wait: number, dist
   return { transit: t / sum, car: c / sum, walk: w / sum, taxi: x / sum };
 }
 export function routeLength(world: World, route: Route): number {
-  return route.stops.slice(1).reduce((sum, id, i) => sum + roadDistance(world.districts[route.stops[i]], world.districts[id]), 0);
+  return route.stops.slice(1).reduce((sum, id, i) => sum + lineDistance(route.mode,world.districts[route.stops[i]], world.districts[id]), 0);
 }
 export function routeTravel(world: World, route: Route, from: number, to: number): number {
   const a = route.stops.indexOf(from), b = route.stops.indexOf(to);

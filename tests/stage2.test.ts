@@ -38,7 +38,7 @@ describe('редактирование маршрутов и типы транс
     expect(headway(w,{...w.routes[0],mode:'bus'})).toBeGreaterThan(headway(w,w.routes[0]));
   });
   it('берёт оплату новых участков электрической линии, сохраняя оплату старых',()=>{
-    const w=createWorld();w.routes[0].mode='tram';w.fleets={marshrutka:1,bus:0,trolleybus:0,tram:1};
+    const w=createWorld();w.routes[0].mode='tram';w.fleets={marshrutka:1,bus:0,trolleybus:0,tram:1,suburban:0,metro:0};
     expect(constructionCost(w,[0,1,2,3],'tram',1)).toBe(0);
     expect(constructionCost(w,[3,2,1,0],'tram',1)).toBe(0);
     expect(constructionCost(w,[0,1,2,3,6],'tram',1)).toBe(E.stopCost+3*T.tram.infrastructurePerUnit);
@@ -97,7 +97,7 @@ describe('экономика, износ и события',()=>{
   });
   it('экологичный транспорт улучшает показатель; кризис обратим, поражение требует двух условий',()=>{
     const dirty=createWorld(),clean=createWorld();
-    clean.routes[0].mode='tram';clean.fleets={marshrutka:1,bus:0,trolleybus:0,tram:1};step(dirty,60);step(clean,60);expect(clean.ecology).toBeGreaterThan(dirty.ecology);
+    clean.routes[0].mode='tram';clean.fleets={marshrutka:1,bus:0,trolleybus:0,tram:1,suburban:0,metro:0};step(dirty,60);step(clean,60);expect(clean.ecology).toBeGreaterThan(dirty.ecology);
     const w=createWorld();w.money=-E.gameOverMoney-1000;step(w,5);expect(w.gameOver).toBe(false);
     w.trust=0;step(w,5);expect(w.gameOver).toBe(true);const minute=w.minute;step(w,60);expect(w.minute).toBe(minute);
     expect(applyCommand(w,{type:'takeLoan'}).ok).toBe(false);
@@ -109,7 +109,7 @@ describe('перенос сохранений первого этапа',()=>{
     for(const key of ['fleets','wear','ledger','debt','gameOver','event','nextEvent','ecology'])delete old[key];
     const memory=new Map([[LEGACY_KEY,JSON.stringify(old)]]);
     const storage={getItem:(key:string)=>memory.get(key)??null,setItem:(key:string,value:string)=>{memory.set(key,value);}};
-    const migrated=load(storage);expect(migrated.warning).toBeUndefined();expect(migrated.world.version).toBe(5);expect(migrated.world.money).toBe(old.money);
+    const migrated=load(storage);expect(migrated.warning).toBeUndefined();expect(migrated.world.version).toBe(6);expect(migrated.world.money).toBe(old.money);
     expect(migrated.world.fleets.marshrutka).toBe(old.fleet);expect(migrated.world.routes[0].mode).toBe('marshrutka');
     save(migrated.world,storage);expect(memory.get(LEGACY_KEY)).toBe(JSON.stringify(old));expect(memory.has(SAVE_KEY)).toBe(true);
     for(const mode of MODES){const invalid=getSnapshot(migrated.world);invalid.fleets[mode]=-1;expect(restore(JSON.stringify(invalid))).toBeNull();}

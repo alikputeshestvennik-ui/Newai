@@ -1,14 +1,15 @@
 import { D } from '../sim/config';
-import { roadPath, type RoadPoint } from '../sim/roads';
-import type { World } from '../sim/types';
+import { alignment, railway } from '../sim/alignment';
+import type { RoadPoint } from '../sim/roads';
+import type { World, Mode } from '../sim/types';
 
 type Segment = { start: RoadPoint; end: RoadPoint; key: string; direction: number; lane: number };
-export function layoutNetwork(world: Pick<World, 'districts' | 'routes'>, draft: number[]) {
+export function layoutNetwork(world: Pick<World, 'districts' | 'routes'>, draft: number[], draftMode:Mode='marshrutka') {
   const corridors = new Map<string, Set<number>>();
-  const routes = [...world.routes, { id: 0, stops: draft }].filter(route => route.stops.length > 1).map(route => {
+  const routes = [...world.routes, { id: 0, stops: draft, mode:draftMode }].filter(route => route.stops.length > 1).map(route => {
     const segments: Segment[] = [];
     for (let index = 1; index < route.stops.length; index++) {
-      const points = roadPath(world.districts[route.stops[index - 1]], world.districts[route.stops[index]]);
+      const points = alignment(route.mode,world.districts[route.stops[index - 1]], world.districts[route.stops[index]]);
       for (let step = 1; step < points.length; step++) {
         const start = points[step - 1], end = points[step];
         const direction = Math.sign(start[0] - end[0] || start[1] - end[1]);
@@ -19,7 +20,7 @@ export function layoutNetwork(world: Pick<World, 'districts' | 'routes'>, draft:
         segments.push({ start, end, key, direction, lane: 0 });
       }
     }
-    return { id: route.id, segments };
+    return { id: route.id, mode: route.mode, segments };
   });
   for (const route of routes) for (const segment of route.segments) {
     const ids = [...corridors.get(segment.key)!].sort((first, second) => first - second);
@@ -39,15 +40,16 @@ export class NetworkInk {
   constructor(host: HTMLElement) {
     this.svg.classList.add('network-ink'); this.svg.setAttribute('aria-hidden', 'true'); host.append(this.svg);
   }
-  update(world: World, draft: number[], focus?: number) {
+  update(world: World, draft: number[], focus?: number, draftMode:Mode='marshrutka') {
     this.svg.replaceChildren(); this.tracks = []; this.stops = [];
     const visible = focus ? world.routes.filter(route => route.id === focus) : world.routes;
-    for (const route of layoutNetwork({ districts: world.districts, routes: visible }, draft)) {
+    for (const route of layoutNetwork({ districts: world.districts, routes: visible }, draft,draftMode)) {
       const rim = svgElement('path'), ink = svgElement('path');
       rim.setAttribute('stroke', '#17303c'); rim.setAttribute('stroke-width', '5.6');
       ink.setAttribute('stroke', route.id ? D.colors[(route.id - 1) % D.colors.length] : '#ffdf80');
       ink.setAttribute('stroke-width', '3.3'); ink.dataset.route = String(route.id);
       if (!route.id) ink.setAttribute('stroke-dasharray', '5 5');
+      else if (route.mode==='metro') ink.setAttribute('stroke-dasharray','9 3');
       this.svg.append(rim, ink); this.tracks.push({ segments: route.segments, rim, ink });
     }
     for (const district of world.districts) {
@@ -56,7 +58,10 @@ export class NetworkInk {
       const dot = svgElement('circle'); dot.setAttribute('r', serving.length > 1 ? '5.3' : '3.4');
       dot.setAttribute('fill', draft.includes(district.id) ? '#ffdf80' : '#fff9e8');
       dot.setAttribute('stroke', '#17303c'); dot.setAttribute('stroke-width', serving.length > 1 ? '2.8' : '1.6');
-      this.svg.append(dot); this.stops.push({ point: [district.x, district.y], dot });
+      const modes=serving.map(route=>route.mode);
+      if(draft.includes(district.id))modes.push(draftMode);
+      const heights=new Set(modes.map(mode=>mode==='suburban'?railway.trackZ:district.y));
+      for(const height of heights){const marker=dot.cloneNode(false) as SVGCircleElement;this.svg.append(marker);this.stops.push({point:[district.x,height],dot:marker});}
     }
   }
   project(project: (point: RoadPoint) => RoadPoint) {

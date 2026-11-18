@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { T } from '../sim/config';
-import type { World } from '../sim/types';
+import { allowedStop } from '../sim/alignment';
+import type { World, Mode } from '../sim/types';
 import { Actors } from './actors';
 import { DevelopmentView } from './development';
 import { EventView } from './events';
@@ -52,6 +53,7 @@ export class CityMap {
   private lastCounter = performance.now() / 1000;
   onStop: (id: number) => void = () => {};
   set building(value: boolean) { this.controls.building = value; }
+  get building() { return this.controls.building; }
   readonly layers = new Set<Layer>();
   constructor(private host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'low-power' });
@@ -85,7 +87,7 @@ export class CityMap {
   rotate(delta:number){this.controls.rotate(delta);}
   recenter(){this.controls.recenter();}
   get light(){return this.daylight;}
-  update(world:World,draft:number[],endpoint?:number) {
+  update(world:World,draft:number[],endpoint?:number,draftMode:Mode='marshrutka') {
     const flows=this.layers.has('demand')?demandFlows(world):[],hourly=world.districts.map(()=>0);
     for(const flow of flows)hourly[flow.from]+=flow.perHour;
     const top=flows.slice(0,feedback.topFlowCount),flowSignature=JSON.stringify(top.map(f=>[f.from,f.to]));
@@ -112,10 +114,10 @@ export class CityMap {
       this.host.append(label);this.labels.push(label);
     }
     for(const [layer,heat] of this.heat){heat.count=world.districts.length;heat.visible=this.layers.has(layer);}
-    const signature=JSON.stringify([world.routes.map(r=>[r.id,r.stops]),draft,this.focusedRoute,world.districts.length]);
+    const signature=JSON.stringify([world.routes.map(r=>[r.id,r.stops,r.mode]),draftMode,draft,this.focusedRoute,world.districts.length]);
     if(signature!==this.signature){
       this.signature=signature;
-      this.network.update(world,draft,this.focusedRoute);this.positionedLabels=-1;
+      this.network.update(world,draft,this.focusedRoute,draftMode);this.positionedLabels=-1;
       for(const district of world.districts){
         const label=this.labels[district.id],focus=world.routes.find(route=>route.id===this.focusedRoute);
         const position=focus?.stops.indexOf(district.id)??-1;
@@ -144,6 +146,7 @@ export class CityMap {
       this.stops[d.id].scale.setScalar(draft.includes(d.id)?1.6:1);
       this.labels[d.id].classList.toggle('analytical',this.layers.size>0);
       this.labels[d.id].title=Array.from(this.labels[d.id].children).filter(el=>!(el as HTMLElement).hidden).map(el=>el.textContent).join('\n');
+      this.labels[d.id].classList.toggle('off-platform',this.building&&!allowedStop(draftMode,d));
       this.labels[d.id].classList.toggle('selected',draft.includes(d.id));
       this.labels[d.id].classList.toggle('extend-endpoint',d.id===endpoint);
     }

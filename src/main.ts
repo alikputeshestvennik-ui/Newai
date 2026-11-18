@@ -1,6 +1,7 @@
 import { createWorld, getSnapshot, applyCommand, step } from './sim/world';
 import { load, save } from './core/save';
 import { E, MODES } from './sim/config';
+import { allowedStop } from './sim/alignment';
 import { reserved, unlocked } from './sim/commands';
 import { t } from './core/i18n';
 import { readSettings, writeSettings } from './core/settings';
@@ -32,7 +33,8 @@ function start(){
     if(world.goals.earned<=rewarded)return;
     ui.celebrate(world,world.goals.earned-rewarded);rewarded=world.goals.earned;audio.cue();persist();
   };
-  const refresh=()=>{snapshot=getSnapshot(world);ui.update(snapshot);map.update(snapshot,draft??[],editor?.extending?editor.endpoint:undefined);ui.build(draft,editing,editor);tutorial.render();};
+  const draftMode=()=>world.routes.find(route=>route.id===editing)?.mode??ui.mode;
+  const refresh=()=>{snapshot=getSnapshot(world);ui.update(snapshot);map.update(snapshot,draft??[],editor?.extending?editor.endpoint:undefined,draftMode());ui.build(draft,editing,editor);tutorial.render();};
   const persist=()=>{if(!save(world,storage))ui.toast('saveError');};
   const focus=(id?:number)=>{
     map.focusedRoute=id;const all=document.getElementById('all-lines')!;all.hidden=!id;
@@ -52,7 +54,7 @@ function start(){
   };
   ui.onBuild=()=>begin();ui.onEdit=id=>begin(id);ui.onExtend=id=>{begin(id,true);tutorial.signal('extending');};ui.onCancel=()=>{cancel();ui.openPanel('routes');tutorial.signal('cancel');};
   ui.onFocus=id=>{if(draft!==null)return;ui.openPanel('map');focus(id);if(id)map.recenter();refresh();};
-  ui.onSuggest=stops=>{ui.mode=MODES.find(mode=>unlocked(world,mode)&&reserved(world,mode)>0)??ui.mode;begin();if(draft){editor!.stops=[...stops];draft=editor!.stops;refresh();tutorial.signal('planned');}};
+  ui.onSuggest=stops=>{ui.mode=MODES.find(mode=>unlocked(world,mode)&&reserved(world,mode)>0&&stops.every(id=>allowedStop(mode,world.districts[id])))??'marshrutka';begin();if(draft){editor!.stops=[...stops];draft=editor!.stops;refresh();tutorial.signal('planned');}};
   ui.onConfirm=()=>{
     if(!draft||!editor||editing&&!editor.changed)return;
     const result=applyCommand(world,editing?{type:'editRoute',routeId:editing,stops:draft}:{type:'buildRoute',stops:draft,mode:ui.mode});
@@ -71,6 +73,7 @@ function start(){
     if(ui.panelOpen)return;
     if(!editor)begin();
     if(!editor)return;
+    if(!allowedStop(draftMode(),world.districts[id])){ui.toast('railPlatforms');return;}
     const result=editor.add(id);draft=editor.stops;
     if(result==='existing')ui.toast('stopAlreadySelected');
     refresh();
@@ -78,7 +81,7 @@ function start(){
   ui.onSpeed=value=>{speed=value;accumulator=0;};ui.onModal=value=>{modal=value;accumulator=0;};
   ui.onReset=()=>{world=createWorld();rewarded=world.goals.earned;engagement=new Engagement(world);editing=undefined;editor=undefined;draft=null;map.building=false;focus();accumulator=0;persist();refresh();};
   ui.onRotate=delta=>map.rotate(delta);ui.onZoom=factor=>map.changeZoom(factor);ui.onRecenter=()=>map.recenter();
-  ui.onLayer=(layer,enabled)=>{if(enabled)map.layers.add(layer);else map.layers.delete(layer);map.update(snapshot,draft??[],editor?.extending?editor.endpoint:undefined);
+  ui.onLayer=(layer,enabled)=>{if(enabled)map.layers.add(layer);else map.layers.delete(layer);map.update(snapshot,draft??[],editor?.extending?editor.endpoint:undefined,draftMode());
     if(layer==='demand'&&enabled)tutorial.signal('demand');
     if(map.layers.has('load')&&map.layers.has('complaints'))tutorial.signal('layers');
   };

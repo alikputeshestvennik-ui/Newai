@@ -1,3 +1,4 @@
+import { allowedStop } from '../sim/alignment';
 import type { RouteDraft } from '../core/route-draft';
 import { t, number } from '../core/i18n';
 import { MAP_LAYERS, type Layer } from '../core/layers';
@@ -184,14 +185,14 @@ export class GameUI {
       document.getElementById('draft-mode')!.innerHTML=MODES.filter(m=>reserved(this.world,m)>0||m===this.mode).map(m=>`<option value="${m}" ${m===this.mode?'selected':''}>${t(m)} · ${t('reserve',{count:reserved(this.world,m)})}</option>`).join('');
       const endpoint=editor?.endpoint;
       document.getElementById('build-hint')!.textContent=extending?t('extendHint',{id:routeId!,name:endpoint===undefined?'':t(this.world.districts[endpoint].name)}):t(routeId?'editHint':'buildHint');
-      document.getElementById('draft-hint')!.textContent=t(extending?'extendDraftHint':'draftHint');
+      const mode=this.world.routes.find(r=>r.id===routeId)?.mode??this.mode;
+      document.getElementById('draft-hint')!.textContent=t(mode==='suburban'?'railPlatforms':extending?'extendDraftHint':'draftHint');
       document.querySelector<HTMLSelectElement>('#draft-end')!.value=editor?.side??'end';
       document.getElementById('clear-draft')!.textContent=t(extending?'resetExtension':'clearDraft');
       document.querySelector<HTMLButtonElement>('#undo')!.disabled=!draft.length||!!(extending&&editor?.original.includes(editor.endpoint!));
       document.getElementById('selection')!.innerHTML=draft.map((id,index)=>`<button ${extending&&editor?.original.includes(id)?'disabled':''} class="${extending&&!editor?.original.includes(id)?'draft-added':''}" data-index="${index}" aria-label="${t('draftRemove',{name:t(this.world.districts[id].name)})}">${index+1}. ${t(this.world.districts[id].name)} ${extending&&editor?.original.includes(id)?'':'×'}</button>`).join('')||t('selected',{count:0});
       const button=document.querySelector<HTMLButtonElement>('#confirm')!;
-      const mode=this.world.routes.find(r=>r.id===routeId)?.mode??this.mode;
-      button.textContent=t(extending?'extendConfirm':routeId?'editConfirm':'confirm',{cost:number(constructionCost(this.world,draft,mode,routeId))});button.disabled=draft.length<2||!!routeId&&!editor?.changed||!routeId&&reserved(this.world,mode)<1;
+      button.textContent=t(extending?'extendConfirm':routeId?'editConfirm':'confirm',{cost:number(constructionCost(this.world,draft,mode,routeId))});button.disabled=draft.length<2||draft.some(id=>!allowedStop(mode,this.world.districts[id]))||!!routeId&&!editor?.changed||!routeId&&reserved(this.world,mode)<1;
       document.getElementById('draft-fleet')!.hidden=!!routeId||reserved(this.world,mode)>0;
       document.getElementById('app')!.style.setProperty('--build-height',`${document.getElementById('build-bar')!.offsetHeight}px`);
     }

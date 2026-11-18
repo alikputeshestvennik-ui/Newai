@@ -1,4 +1,4 @@
-export type Mode = 'marshrutka' | 'bus' | 'trolleybus' | 'tram';
+export type Mode = 'marshrutka' | 'bus' | 'trolleybus' | 'tram' | 'suburban' | 'metro';
 export interface District {
   id: number; name: string; type: string; x: number; y: number;
   population: number; jobs: number; pull: number; density: number;
@@ -14,7 +14,7 @@ export type Goal = { id: number; slot: GoalSlot } & (
 );
 export interface GoalState { active: Goal[]; nextId: number; completed: number; links: string[]; earned: number; lastCompleted: Goal | null; }
 export interface World {
-  version: 5;
+  version: 6;
   story: string[];
   goals: GoalState;
   development: Development[]; expansion: { index: number; since: number; until: number } | null;

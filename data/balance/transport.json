@@ -70,5 +70,17 @@
     "wearPerHour": 0.06,
     "serviceCost": 6500,
     "activeCostPerHour": 300
+  },
+  "suburban": {
+    "capacity": 180, "price": 115000, "reserveCostPerHour": 65, "minutesPerUnit": 1.15, "turnaroundMinutes": 5,
+    "infrastructurePerUnit": 2200, "unlockPopulation": 300000, "unlockServed": 1600,
+    "wages": 180, "energy": 60, "maintenance": 80, "depreciation": 40, "emissions": 0.12,
+    "wearPerHour": 0.065, "serviceCost": 7800, "activeCostPerHour": 360
+  },
+  "metro": {
+    "capacity": 260, "price": 175000, "reserveCostPerHour": 90, "minutesPerUnit": 0.95, "turnaroundMinutes": 3,
+    "infrastructurePerUnit": 9000, "unlockPopulation": 500000, "unlockServed": 3600,
+    "wages": 200, "energy": 85, "maintenance": 100, "depreciation": 65, "emissions": 0.08,
+    "wearPerHour": 0.05, "serviceCost": 9800, "activeCostPerHour": 450
   }
 }
