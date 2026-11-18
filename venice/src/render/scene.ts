@@ -10,13 +10,14 @@ const fragment=`uniform sampler2D plate;uniform vec2 viewScale;uniform vec2 offs
 uniform float time;uniform float outside;varying vec2 screenUV;
 void main(){
  vec2 uv=(screenUV-.5)*viewScale+.5+offset;
- float wet=smoothstep(.305,.21,uv.y)*outside;
+ if(outside>.5 && uv.y<0.) uv.y=-uv.y;
+ float wet=(1.-smoothstep(.21,.305,uv.y))*outside;
  uv.x+=wet*.0014*(sin(uv.y*225.+time*1.4)+sin(uv.x*71.+uv.y*149.-time));
  uv.y+=wet*.0012*sin(uv.y*194.-time*1.6+uv.x*33.);
  vec3 color=texture2D(plate,clamp(uv,vec2(.001),vec2(.999))).rgb;
  gl_FragColor=vec4(color,1.);
  #include <colorspace_fragment>
-}`.replace('smoothstep(.305,.21,uv.y)','(1.-smoothstep(.21,.305,uv.y))');
+}`;
 
 export async function buildScene(host:HTMLElement) {
   const renderer=new T.WebGLRenderer({antialias:true,powerPreference:'high-performance',alpha:false});
@@ -98,9 +99,12 @@ export async function buildScene(host:HTMLElement) {
     const sy=Math.min(.83,2.84/camera.aspect)*ratio;
     uniforms.viewScale.value.set(sy*camera.aspect/3,sy);
     const offset=uniforms.offset.value;
-    offset.set(outside?-yaw*0.30:(phase==='table'?0:.022),outside?pitch*0.60:0);
+    const tangent=Math.tan(T.MathUtils.degToRad(camera.fov/2));
+    // Align the photographed waterline with the height of the far quay.
+    const bankY=0.305+sy*(1.65/19+Math.tan(pitch))/(2*tangent);
+    offset.set(outside?-yaw*0.30:(phase==='table'?0:.022),outside?bankY-.5:0);
     offset.x=clamp(offset.x,-(1-uniforms.viewScale.value.x)/2,(1-uniforms.viewScale.value.x)/2);
-    offset.y=clamp(offset.y,-(1-sy)/2,(1-sy)/2);
+    if(!outside)offset.y=clamp(offset.y,-(1-sy)/2,(1-sy)/2);
     uniforms.time.value=clock;
     if(!outside){
       const inHand=phase!=='table', rise=inHand?Math.min(age*2.2,1):0;
