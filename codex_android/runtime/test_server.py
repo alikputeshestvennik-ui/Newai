@@ -255,6 +255,23 @@ send(method="turn/completed", params={"turn": {"status": "completed",
                 self.assertEqual(self.bridge.task_workspace("older"), legacy / "older")
                 self.assertEqual(self.bridge.task_workspace("default"), private)
 
+    def test_shared_project_git_config_is_scoped_to_its_workspace(self):
+        with tempfile.TemporaryDirectory() as storage:
+            shared = Path(storage) / "CodexFiles"
+
+            def inspect(task, args, prompt, env, output, timeout):
+                workspace = shared.resolve() / "git-project"
+                config = Path(env["GIT_CONFIG_GLOBAL"])
+                self.assertEqual(config.parent, output.parent)
+                self.assertIn(f'directory = "{workspace}"', config.read_text())
+                self.assertIn(f'directory = "{workspace}/*"', config.read_text())
+                self.assertNotIn(f'directory = "{shared}/*"', config.read_text())
+
+            with patch.object(self.bridge, "SHARED_WORK", shared), \
+                    patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
+                status, body = self.request(self.bridge.SECRET, {"goal": "test", "task_id": "git-project"})
+                self.assertEqual(status, 200, body)
+
     def test_unavailable_shared_workspace_does_not_create_private_project(self):
         with tempfile.TemporaryDirectory() as storage:
             private = Path(storage) / "Codex"

@@ -947,6 +947,20 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
         command += provider_options + effort_options
         command.append("-")
         env = os.environ.copy()
+        if workspace.parent == SHARED_WORK:
+            # Android's shared filesystem can report a different owner for our own repositories.
+            git_config = output_dir / "gitconfig"
+            user_config = env.get("GIT_CONFIG_GLOBAL") or str(Path.home() / ".gitconfig")
+            repo = str(workspace.resolve())
+            git_config.write_text(
+                '[include]\n'
+                f'    path = {json.dumps(user_config, ensure_ascii=False)}\n'
+                '[safe]\n'
+                f'    directory = {json.dumps(repo, ensure_ascii=False)}\n'
+                f'    directory = {json.dumps(repo + "/*", ensure_ascii=False)}\n',
+                encoding="utf-8",
+            )
+            env["GIT_CONFIG_GLOBAL"] = str(git_config)
         if gh_token and isinstance(gh_token, str) and gh_token.strip():
             env["GH_TOKEN"] = gh_token.strip()
             env["GITHUB_TOKEN"] = gh_token.strip()
