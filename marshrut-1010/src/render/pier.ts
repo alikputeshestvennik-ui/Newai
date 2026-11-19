@@ -4,6 +4,7 @@ import {
 import {
   awning, awningPosts, bollards, decks, lamps, pavilion, planters, quay, steps, type HarborBox,
 } from '../harbor/layout';
+import { buildSigns } from './signs';
 
 const box = new BoxGeometry();
 const post = new CylinderGeometry(0.5, 0.5, 1, 8);
@@ -149,6 +150,6 @@ export function buildPier() {
   harbor.mount();
 
   const boats = [ferry(-3.72, 1, false), ferry(3.4, 3.67, true)];
-  pier.add(...boats);
+  pier.add(buildSigns(), ...boats);
   return { pier, boats };
 }

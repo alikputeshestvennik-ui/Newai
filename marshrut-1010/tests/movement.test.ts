@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import tuning from '../data/player.json';
-import { canWalk, createWalker, walk } from '../src/player/movement';
+import { canWalk, createWalker, steerWalker, walk } from '../src/player/movement';
 
 function hold(walker: ReturnType<typeof createWalker>, sideways: number, forward: number, frames: number) {
-  for (let i = 0; i < frames; i++) walk(walker, sideways, forward, 0, 0.1);
+  for (let i = 0; i < frames; i++) walk(walker, sideways, forward, 0.1);
 }
 
 describe('walking around the Istanbul pier', () => {
@@ -31,14 +31,40 @@ describe('walking around the Istanbul pier', () => {
     expect(canWalk(-8.8, -7.4)).toBe(false);
   });
 
-  it('moves relative to the camera and caps diagonal speed', () => {
+  it('walks forward as soon as the movement button is held', () => {
     const mark = createWalker();
-    const moved = walk(mark, 0, 1, Math.PI / 2, 0.1);
-    expect(mark.x).toBeCloseTo(-tuning.walkSpeed / 10);
-    expect(mark.z).toBeCloseTo(3.5);
-    expect(mark.heading).toBeCloseTo(-Math.PI / 2);
-    expect(walk(mark, 1, 1, 0, 0.1)).toBeCloseTo(moved);
-    expect(walk(mark, 0.5, 0, 0, 0.1)).toBeCloseTo(moved / 2);
-    expect(walk(mark, 0, 0, Math.PI, 0.1)).toBe(0);
+    const startZ = mark.z;
+    expect(walk(mark, 0, 1, 0.1)).toBeCloseTo(tuning.walkSpeed / 10);
+    expect(mark.x).toBeCloseTo(0);
+    expect(mark.z).toBeCloseTo(startZ - tuning.walkSpeed / 10);
+    expect(walk(mark, 0, 0, 0.1)).toBe(0);
+  });
+
+  it('steps sideways without changing heading and bends its path with a right swipe', () => {
+    const mark = createWalker();
+    const heading = mark.heading;
+    const startZ = mark.z;
+    const step = tuning.walkSpeed / 10;
+    walk(mark, -1, 0, 0.1);
+    expect(mark.x).toBeCloseTo(-step);
+    expect(mark.z).toBeCloseTo(startZ);
+    expect(mark.heading).toBe(heading);
+
+    steerWalker(mark, Math.PI / (2 * tuning.camera.lookRadiansPerPixel));
+    expect(mark.heading).toBeCloseTo(Math.PI / 2);
+    walk(mark, 0, 1, 0.1);
+    expect(mark.x).toBeCloseTo(0);
+    expect(mark.z).toBeCloseTo(startZ);
+    walk(mark, 0, 1, 0.1);
+    expect(mark.x).toBeCloseTo(step);
+    expect(mark.heading).toBeCloseTo(Math.PI / 2);
+  });
+
+  it('can turn away from an obstacle even without a successful step', () => {
+    const mark = { ...createWalker(), z: -4.8 };
+    expect(walk(mark, 0, 1, 0.1)).toBeCloseTo(0);
+    steerWalker(mark, -Math.PI / (2 * tuning.camera.lookRadiansPerPixel));
+    expect(walk(mark, 0, 1, 0.1)).toBeGreaterThan(0);
+    expect(mark.x).toBeLessThan(0);
   });
 });

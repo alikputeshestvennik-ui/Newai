@@ -31,19 +31,23 @@ export function createWalker() {
   return { x, y: floorHeight(x, z), z, heading: Math.PI + tuning.camera.walkYaw };
 }
 
+export function steerWalker(walker: ReturnType<typeof createWalker>, dx: number) {
+  walker.heading = (walker.heading - dx * tuning.camera.lookRadiansPerPixel) % (2 * Math.PI);
+}
+
 export function walk(
   walker: ReturnType<typeof createWalker>,
-  sideways: number, forward: number, cameraYaw: number, seconds: number,
+  sideways: number, forward: number, seconds: number,
 ) {
   const strength = Math.hypot(sideways, forward);
   if (strength === 0 || seconds <= 0) return 0;
 
   const distance = tuning.walkSpeed * Math.min(seconds, 0.1) / Math.max(strength, 1);
   const subdivisions = Math.ceil(distance * Math.min(strength, 1) / (tuning.radius / 2));
-  const sin = Math.sin(cameraYaw);
-  const cos = Math.cos(cameraYaw);
-  const dx = (sideways * cos - forward * sin) * distance / subdivisions;
-  const dz = (-sideways * sin - forward * cos) * distance / subdivisions;
+  const sin = Math.sin(walker.heading);
+  const cos = Math.cos(walker.heading);
+  const dx = (forward * sin - sideways * cos) * distance / subdivisions;
+  const dz = (forward * cos + sideways * sin) * distance / subdivisions;
   const { x: startX, z: startZ } = walker;
 
   for (let step = 0; step < subdivisions; step++) {
@@ -56,12 +60,7 @@ export function walk(
     }
   }
 
-  const movedX = walker.x - startX;
-  const movedZ = walker.z - startZ;
-  const moved = Math.hypot(movedX, movedZ);
-  if (moved > 0) {
-    walker.heading = Math.atan2(movedX, movedZ);
-    walker.y = floorHeight(walker.x, walker.z);
-  }
+  const moved = Math.hypot(walker.x - startX, walker.z - startZ);
+  if (moved > 0) walker.y = floorHeight(walker.x, walker.z);
   return moved;
 }

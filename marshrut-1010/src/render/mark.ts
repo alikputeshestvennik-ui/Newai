@@ -94,9 +94,10 @@ export function buildMark() {
   let stride = 0;
   let breathing = 0;
   let initialized = false;
+  let strafe = 0;
   return {
     root,
-    pose(heading: number, distanceWalked: number, seconds: number, reducedMotion: boolean) {
+    pose(heading: number, distanceWalked: number, seconds: number, reducedMotion: boolean, sideways: number) {
       const dt = Math.min(seconds, 0.1);
       const speed = dt > 0 ? Math.min(1, distanceWalked / (tuning.walkSpeed * dt)) : 0;
       const turn = Math.atan2(Math.sin(heading - figure.rotation.y), Math.cos(heading - figure.rotation.y));
@@ -105,6 +106,7 @@ export function buildMark() {
       initialized = true;
       stride = reducedMotion ? 0 : stride + (Math.sqrt(speed) - stride) * (1 - Math.exp(-13 * dt));
       if (stride < 0.002) stride = 0;
+      strafe += (sideways - strafe) * (1 - Math.exp(-13 * dt));
       breathing = (breathing + dt * 2.1) % (2 * Math.PI);
       phase = stride > 0 ? (phase + distanceWalked * 6.4) % (2 * Math.PI) : 0;
 
@@ -115,7 +117,8 @@ export function buildMark() {
       for (const { hip, knee, ankle, shoulder, elbow, side } of limbs) {
         const swing = Math.sin(phase) * side;
         const lift = Math.max(0, Math.cos(phase) * side);
-        hip.rotation.x = (swing * 0.5 - lift * 0.25) * stride;
+        hip.rotation.x = ((1 - Math.abs(strafe)) * swing * 0.5 - lift * 0.25) * stride;
+        hip.rotation.z = strafe * (swing * 0.32 - 0.13) * stride;
         knee.rotation.x = lift * 0.78 * stride;
         ankle.rotation.x = -(hip.rotation.x + knee.rotation.x) * 0.6;
         shoulder.rotation.x = (-0.34 * swing - 0.06) * stride;

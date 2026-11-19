@@ -1,0 +1,5 @@
+[
+  { "id": "A", "x": -2.27, "shape": "circle" },
+  { "id": "B", "x": 0, "shape": "linked" },
+  { "id": "C", "x": 2.27, "shape": "ring" }
+]

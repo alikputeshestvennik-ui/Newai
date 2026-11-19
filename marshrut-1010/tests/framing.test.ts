@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three';
 import tuning from '../data/player.json';
+import signs from '../data/signs.json';
 import { createWalker } from '../src/player/movement';
 import { createFollowCamera } from '../src/render/follow-camera';
 import { followCameraDistance, harborFieldOfView } from '../src/render/framing';
+import { signFace } from '../src/render/signs';
 
 const targetHeight = 1.25;
 
@@ -44,6 +46,22 @@ describe('pier camera framing', () => {
     expect(follow.camera.getWorldDirection(direction).y).toBeLessThan(initialHeight);
   });
 
+  it.each([[360, 800], [844, 390]])('frames the three sign symbols at %d × %d', (width, height) => {
+    const follow = createFollowCamera();
+    follow.resize(width, height);
+    const mark = createWalker();
+    follow.follow(mark.x, mark.y, mark.z, 0.016);
+    follow.camera.updateMatrixWorld();
+    expect(signs.map(({ shape }) => shape)).toEqual(['circle', 'linked', 'ring']);
+    for (const { x } of signs) {
+      for (const offset of [-0.35, 0.35]) {
+        const corner = new Vector3(x + offset, signFace.y + 0.32, signFace.z).project(follow.camera);
+        expect(Math.abs(corner.x)).toBeLessThan(1);
+        expect(Math.abs(corner.y)).toBeLessThan(1);
+      }
+    }
+  });
+
   it('returns behind Mark gradually by the shortest arc when he starts walking', () => {
     const follow = createFollowCamera();
     const x = 0;
@@ -71,6 +89,7 @@ describe('pier camera framing', () => {
 
   it('lowers the camera smoothly after leaving the pavilion', () => {
     const follow = createFollowCamera();
+    turnTo(follow, -1.7);
     follow.follow(5.4, 1.01, -6.65, 0.016);
     const raised = follow.camera.position.y;
     const normal = 1.01 + targetHeight + followCameraDistance(1) * Math.sin(tuning.camera.walkPitch);
@@ -83,10 +102,12 @@ describe('pier camera framing', () => {
 
   it('clears the pavilion in the walking view without turning sideways', () => {
     const follow = createFollowCamera();
+    const yaw = -1.7;
+    follow.alignBehind(yaw + Math.PI);
     follow.follow(5.4, 1.01, -6.65, 0.016);
     const offset = follow.camera.position.clone().sub(new Vector3(5.4, 2.26, -6.65));
     expect(offset.length()).toBeCloseTo(followCameraDistance(1));
-    expect(Math.atan2(offset.x, offset.z)).toBeCloseTo(tuning.camera.walkYaw);
+    expect(Math.atan2(offset.x, offset.z)).toBeCloseTo(yaw);
     expect(follow.camera.position.y).toBeGreaterThan(3.66);
   });
 

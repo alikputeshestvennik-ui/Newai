@@ -79,7 +79,7 @@ test('camera turns with the swipe and stays still while the finger holds that sp
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 });
 
-test('shows the movement stick under the finger and only looks around while stopped', async ({ page }) => {
+test('walks on hold, steps sideways, and steers with a second finger', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   const stick = page.getByRole('img', { name: ru.moveStick });
@@ -90,52 +90,37 @@ test('shows the movement stick under the finger and only looks around while stop
   const move = { x: 105, y: 640, id: 0 };
   const look = { x: 290, y: 400, id: 1 };
 
-  const beforeLook = await canvas.screenshot();
-  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [look] });
-  look.y -= 44;
-  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [look] });
-  await expect.poll(async () => (await canvas.screenshot()).equals(beforeLook)).toBe(false);
-  await expect(stick).toBeHidden();
-  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-
+  const beforeWalk = await canvas.screenshot();
   await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [move] });
   await expect(stick).toBeVisible();
   const { x, y, width, height } = (await stick.boundingBox())!;
   expect(x + width / 2).toBeCloseTo(move.x);
   expect(y + height / 2).toBeCloseTo(move.y);
-  const beforeWalk = await canvas.screenshot();
-  move.y -= 22;
-  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move] });
   await expect.poll(async () => (await canvas.screenshot()).equals(beforeWalk)).toBe(false);
 
-  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [move, look] });
-  move.y += 22;
-  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move, look] });
+  move.x -= 22;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move] });
+  await expect(stick.locator('span')).not.toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+  move.x += 22;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move] });
   await expect(stick.locator('span')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
-  // Let the walking view settle, even if the movement stick was released mid-turn.
-  let afterWalk = await canvas.screenshot();
+
+  let atWall = await canvas.screenshot();
   await expect.poll(async () => {
     const frame = await canvas.screenshot();
-    const still = frame.equals(afterWalk);
-    afterWalk = frame;
+    const still = frame.equals(atWall);
+    atWall = frame;
     return still;
-  }).toBe(true);
-  look.x += 44;
-  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move, look] });
-  expect((await canvas.screenshot()).equals(afterWalk)).toBe(true);
-  await session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
-  await expect(stick).toBeHidden();
-  const afterCancel = await canvas.screenshot();
-  expect((await canvas.screenshot()).equals(afterCancel)).toBe(true);
+  }, { timeout: 12000, intervals: [400, 700] }).toBe(true);
 
-  await page.setViewportSize({ width: 844, height: 390 });
-  await expect(canvas).toHaveAttribute('width', '1266');
-  const beforeLandscapeLook = await canvas.screenshot();
-  const right = { x: 600, y: 150, id: 1 };
-  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [right] });
-  right.x -= 95;
-  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [right] });
-  await expect.poll(async () => (await canvas.screenshot()).equals(beforeLandscapeLook)).toBe(false);
-  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [move, look] });
+  look.y -= 44;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move, look] });
+  expect((await canvas.screenshot()).equals(atWall)).toBe(true);
+  look.x += 80;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move, look] });
+  await expect.poll(async () => (await canvas.screenshot()).equals(atWall)).toBe(false);
+  await expect(stick).toBeVisible();
+  await session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
   await expect(stick).toBeHidden();
 });

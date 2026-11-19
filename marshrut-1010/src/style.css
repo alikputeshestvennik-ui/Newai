@@ -94,5 +94,5 @@ h1 {
   aspect-ratio: 1;
   border-radius: 50%;
   background: #fff5df;
-  transform: translate(var(--stick-x, 0px), var(--stick-y, 0px));
+  transform: translateX(var(--stick-x, 0px));
 }

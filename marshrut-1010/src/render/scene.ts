@@ -2,7 +2,7 @@ import {
   Color, DirectionalLight, HemisphereLight, Scene, WebGLRenderer,
 } from 'three';
 import { bindHarborControls } from '../player/controls';
-import { createWalker, walk } from '../player/movement';
+import { createWalker, steerWalker, walk } from '../player/movement';
 import { createFollowCamera } from './follow-camera';
 import { buildMark } from './mark';
 import { buildPier } from './pier';
@@ -34,7 +34,14 @@ export function showHarbor(
   const mark = buildMark();
   scene.add(pier, mark.root);
   const follow = createFollowCamera();
-  const controls = bindHarborControls(canvas, stick, schedule, follow.look);
+  const controls = bindHarborControls(canvas, stick, schedule, (dx, dy, walking) => {
+    if (walking) {
+      steerWalker(walker, dx);
+      follow.alignBehind(walker.heading);
+    } else {
+      follow.look(dx, dy);
+    }
+  });
 
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
   let frameId = 0;
@@ -44,8 +51,6 @@ export function showHarbor(
   let sampleStart = 0;
   let frames = 0;
   let lastFrame = 0;
-  let walking = false;
-  let movementYaw = 0;
 
   function schedule() {
     if (!frameId && !contextLost && !document.hidden) {
@@ -73,15 +78,12 @@ export function showHarbor(
 
     const elapsedSeconds = lastFrame ? (now - lastFrame) / 1000 : 0;
     lastFrame = now;
-    const { x: sideways, y: down } = controls.movement;
-    const wantsToWalk = sideways !== 0 || down !== 0;
-    // Keep the stick direction stable while the camera turns behind Mark.
-    if (wantsToWalk && !walking) movementYaw = walker.heading + Math.PI;
-    walking = wantsToWalk;
-    const moved = walk(walker, sideways, -down, movementYaw, elapsedSeconds);
+    const { pointer, sideways } = controls.movement;
+    const walking = pointer !== null;
+    const moved = walking ? walk(walker, sideways, sideways === 0 ? 1 : 0, elapsedSeconds) : 0;
     if (walking) follow.alignBehind(walker.heading);
     mark.root.position.set(walker.x, walker.y, walker.z);
-    mark.pose(walker.heading, moved, elapsedSeconds, motion.matches);
+    mark.pose(walker.heading, moved, elapsedSeconds, motion.matches, sideways);
     const cameraMoving = follow.follow(walker.x, walker.y, walker.z, elapsedSeconds);
     boats[0].position.y = motion.matches ? 0 : Math.sin(now / 1150) * 0.054;
     boats[1].position.y = motion.matches ? 0 : Math.sin(now / 1090 + 1.5) * 0.07;

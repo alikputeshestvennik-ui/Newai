@@ -1,8 +1,9 @@
 {
   "walkSpeed": 2.9,
   "radius": 0.24,
+  "strafeThreshold": 0.48,
   "camera": {
-    "walkYaw": -1.7,
+    "walkYaw": 0,
     "walkPitch": 0.42,
     "lookRadiansPerPixel": 0.009,
     "minPitch": 0.22,

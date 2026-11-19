@@ -1,13 +1,14 @@
-const deadZone = 0.12;
+import tuning from '../../data/player.json';
+
 const lookSlop = 2;
 
 export function bindHarborControls(
   canvas: HTMLCanvasElement,
   moveStick: HTMLElement,
   wake: () => void,
-  onLook: (dx: number, dy: number) => void,
+  onLook: (dx: number, dy: number, walking: boolean) => void,
 ) {
-  const movement = { pointer: null as number | null, centerX: 0, centerY: 0, radius: 1, x: 0, y: 0 };
+  const movement = { pointer: null as number | null, centerX: 0, radius: 1, sideways: 0 };
   const look = { pointer: null as number | null, lastX: 0, lastY: 0 };
 
   function releasePointer(pointer: number) {
@@ -18,8 +19,7 @@ export function bindHarborControls(
     const { pointer } = movement;
     if (pointer === null) return;
     movement.pointer = null;
-    movement.x = 0;
-    movement.y = 0;
+    movement.sideways = 0;
     releasePointer(pointer);
     moveStick.hidden = true;
     wake();
@@ -38,16 +38,15 @@ export function bindHarborControls(
     if (event.clientX < bounds.left + bounds.width / 2) {
       if (movement.pointer !== null) return;
       movement.centerX = event.clientX;
-      movement.centerY = event.clientY;
       movement.pointer = event.pointerId;
       moveStick.style.setProperty('--stick-center-x', `${movement.centerX}px`);
-      moveStick.style.setProperty('--stick-center-y', `${movement.centerY}px`);
+      moveStick.style.setProperty('--stick-center-y', `${event.clientY}px`);
       moveStick.style.removeProperty('--stick-x');
-      moveStick.style.removeProperty('--stick-y');
       moveStick.hidden = false;
       movement.radius = moveStick.offsetWidth * 0.31;
+      wake();
     } else {
-      if (look.pointer !== null || movement.x || movement.y) return;
+      if (look.pointer !== null) return;
       look.pointer = event.pointerId;
       look.lastX = event.clientX;
       look.lastY = event.clientY;
@@ -58,23 +57,20 @@ export function bindHarborControls(
   canvas.addEventListener('pointermove', (event) => {
     if (event.pointerId === movement.pointer) {
       const dx = (event.clientX - movement.centerX) / movement.radius;
-      const dy = (event.clientY - movement.centerY) / movement.radius;
-      const length = Math.hypot(dx, dy);
-      const strength = Math.max(0, (Math.min(length, 1) - deadZone) / (1 - deadZone));
-      const scale = length > 0 ? strength / length : 0;
-      movement.x = dx * scale;
-      movement.y = dy * scale;
-      moveStick.style.setProperty('--stick-x', `${movement.x * movement.radius}px`);
-      moveStick.style.setProperty('--stick-y', `${movement.y * movement.radius}px`);
-      if (movement.x || movement.y) releaseLook();
+      movement.sideways = Math.abs(dx) >= tuning.strafeThreshold ? Math.sign(dx) : 0;
+      moveStick.style.setProperty('--stick-x', `${movement.sideways * movement.radius}px`);
       wake();
     } else if (event.pointerId === look.pointer) {
       const dx = event.clientX - look.lastX;
       const dy = event.clientY - look.lastY;
-      if (Math.hypot(dx, dy) <= lookSlop) return;
+      const walking = movement.pointer !== null;
+      if (walking) {
+        look.lastY = event.clientY;
+        if (Math.abs(dx) <= lookSlop) return;
+      } else if (Math.hypot(dx, dy) <= lookSlop) return;
       look.lastX = event.clientX;
       look.lastY = event.clientY;
-      onLook(dx, dy);
+      onLook(dx, walking ? 0 : dy, walking);
       wake();
     }
   });
