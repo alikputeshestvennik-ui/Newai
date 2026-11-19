@@ -1,11 +1,11 @@
-import { Box3, PerspectiveCamera, Ray, Vector3 } from 'three';
+import { Box3, MathUtils, PerspectiveCamera, Ray, Vector3 } from 'three';
 import tuning from '../../data/player.json';
 import { cameraWalls } from '../harbor/layout';
 import { followCameraDistance, harborFieldOfView } from './framing';
 
 const turn = 2 * Math.PI;
 const closeDistance = 2.25;
-const maxLift = 1.556;
+const maxLift = Math.PI / 2 - 0.015;
 const tolerance = 0.001;
 const sideViews = [-Math.PI / 4, Math.PI / 4, -Math.PI / 2, Math.PI / 2, Math.PI];
 
@@ -81,9 +81,9 @@ export function createFollowCamera() {
       if (!dx && !dy) return;
       // Take over from the visible angle if a swipe begins during the return to walking view.
       yaw = targetYaw = (yaw - dx * settings.lookRadiansPerPixel) % turn;
-      pitch = targetPitch = Math.min(settings.maxPitch, Math.max(
-        settings.minPitch, pitch + dy * settings.lookRadiansPerPixel,
-      ));
+      pitch = targetPitch = MathUtils.clamp(
+        pitch + dy * settings.lookRadiansPerPixel, settings.minPitch, settings.maxPitch,
+      );
       lookingAround = true;
     },
     resize(width: number, height: number) {
@@ -117,7 +117,8 @@ export function createFollowCamera() {
       }
 
       lift = approach(lift, viewPitch - pitch, liftWeight);
-      const freeDistance = clearDistance(pitch + lift, viewDistance, viewYaw);
+      const cameraPitch = MathUtils.clamp(pitch + lift, settings.minPitch, maxLift);
+      const freeDistance = clearDistance(cameraPitch, viewDistance, viewYaw);
       cameraDistance = Math.min(freeDistance, approach(cameraDistance, viewDistance, liftWeight));
       ray.at(cameraDistance, camera.position);
       camera.lookAt(target);
