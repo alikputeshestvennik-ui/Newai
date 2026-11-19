@@ -2,7 +2,7 @@ import { CanvasTexture, DoubleSide, Group, Mesh, MeshBasicMaterial, PlaneGeometr
 import signs from '../../data/signs.json';
 import { awning } from '../harbor/layout';
 
-export const signFace = { y: 3.12, z: awning.z + awning.depth / 2 + 0.025, width: 1.92, height: 0.88 };
+export const signFace = { y: 3.25, z: awning.z + awning.depth / 2 + 0.025, width: 1.92, height: 0.88 };
 
 function makeFace(shape: string) {
   const canvas = document.createElement('canvas');
