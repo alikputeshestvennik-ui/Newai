@@ -1,6 +1,9 @@
 import {
   BoxGeometry, CylinderGeometry, Group, InstancedMesh, Mesh, MeshLambertMaterial, Matrix4, Vector3,
 } from 'three';
+import {
+  awning, awningPosts, bollards, decks, lamps, pavilion, planters, quay, steps, type HarborBox,
+} from '../harbor/layout';
 
 const box = new BoxGeometry();
 const post = new CylinderGeometry(0.5, 0.5, 1, 8);
@@ -91,6 +94,9 @@ export function buildPier() {
   const pier = new Group();
   const harbor = scenery(pier);
   const { piece } = harbor;
+  const place = (surface: Surface, { x, y, z, width, height, depth }: HarborBox, geometry: Geometry = box) => {
+    piece(surface, x, y, z, width, height, depth, geometry);
+  };
 
   piece('water', 0, -0.18, 0, 100, 0.35, 100);
   for (let i = 0; i < 72; i++) {
@@ -100,7 +106,7 @@ export function buildPier() {
   }
 
   piece('concrete', 0, 0.34, -10, 49, 1.1, 14);
-  piece('stone', 0, 0.93, -10, 49, 0.16, 14);
+  place('stone', quay);
   piece('stone', 0, 0.78, -3, 49, 0.37, 0.38);
 
   for (let i = 0; i < 16; i++) {
@@ -112,39 +118,33 @@ export function buildPier() {
       piece('glass', x + offset, height * 0.68 + 1, -11.29, 0.58, 0.67, 0.04);
     }
   }
-  for (const x of [-8.8, -6.8, 6.8, 8.8]) {
-    piece('concrete', x, 1.23, -7.4, 0.7, 0.45, 0.7);
-    piece('cypress', x, 2.6, -7.4, 0.56, 2.6, 0.56, post);
+  for (const planter of planters) {
+    place('concrete', planter);
+    piece('cypress', planter.x, 2.6, planter.z, 0.56, 2.6, 0.56, post);
   }
 
-  piece('wall', 0, 2.18, -6.65, 8.4, 2.36, 3.2);
+  place('wall', pavilion);
   piece('roof', 0, 3.51, -6.65, 8.8, 0.3, 3.55);
   piece('ivory', 0, 3.33, -4.97, 8.65, 0.15, 0.22);
-  piece('rust', 0, 2.96, -4.52, 7.7, 0.13, 0.86);
+  place('rust', awning);
   for (const x of [-3.3, -2.1, -0.9, 0.3, 1.5, 2.7]) {
     piece('glass', x, 2.02, -5.038, 0.78, 1.56, 0.048);
   }
-  for (const x of [-3.75, -1.25, 1.25, 3.75]) {
-    piece('wall', x, 1.98, -4.15, 0.13, 1.96, 0.13);
-  }
+  for (const post of awningPosts) place('wall', post);
 
-  piece('concrete', 0, 0.75, -2.8, 3.15, 0.4, 0.5);
-  piece('concrete', 0, 0.61, -2.35, 3.15, 0.3, 0.5);
-  piece('wood', 0, 0.49, 2.38, 4.2, 0.25, 9);
-  piece('wood', 1.15, 0.49, 6.02, 6.5, 0.25, 1.72);
+  for (const step of steps) place('concrete', step);
+  for (const deck of decks) place('wood', deck);
   for (let step = 0; step <= 26; step++) {
     piece('grain', 0, 0.618, -2 + step * 0.333, 4.12, 0.012, 0.025);
   }
-  for (const side of [-1, 1]) {
-    for (const z of [-1.82, 0.48, 2.78, 5.14, 6.54]) {
-      piece('steel', side * 1.97, 0.57, z, 0.2, 1.03, 0.2, post);
-      piece('brass', side * 1.97, 1.1, z, 0.24, 0.09, 0.24, post);
-    }
+  for (const { x, y, z, height, width } of bollards) {
+    piece('steel', x, y, z, 0.2, height, 0.2, post);
+    piece('brass', x, 1.1, z, width, 0.09, width, post);
   }
-  for (const x of [-3.85, 3.85]) {
-    piece('steel', x, 2.22, -3.58, 0.13, 2.6, 0.13, post);
-    piece('steel', x, 3.48, -3.35, 0.13, 0.13, 0.5);
-    piece('brass', x, 3.38, -3.12, 0.34, 0.18, 0.29);
+  for (const lamp of lamps) {
+    place('steel', lamp, post);
+    piece('steel', lamp.x, 3.48, -3.35, 0.13, 0.13, 0.5);
+    piece('brass', lamp.x, 3.38, -3.12, 0.34, 0.18, 0.29);
   }
   harbor.mount();
 

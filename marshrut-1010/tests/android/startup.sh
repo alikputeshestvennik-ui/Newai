@@ -5,6 +5,8 @@ app=ru.alim.marshrut1010
 activity="$app/.MainActivity"
 apk="$1"
 results="$2"
+ready=$(node -p 'require("./marshrut-1010/data/ru.json").ready')
+stick=$(node -p 'require("./marshrut-1010/data/ru.json").moveStick')
 mkdir -p "$results"
 
 trap 'adb logcat -d -s AndroidRuntime chromium Capacitor > "$results/logcat.txt"' EXIT
@@ -18,7 +20,7 @@ expect_scene() {
   for attempt in {1..12}; do
     adb shell uiautomator dump "$view" >/dev/null 2>&1 || continue
     adb exec-out cat "$view" > "$results/$label.xml"
-    if grep -q '3D-сцена запущена' "$results/$label.xml" &&
+    if grep -Fq "$ready" "$results/$label.xml" && grep -Fq "$stick" "$results/$label.xml" &&
        grep -q "<hierarchy rotation=\"$expected_rotation\"" "$results/$label.xml"; then
       adb exec-out screencap -p > "$results/$label.png"
       python3 - "$results/$label.png" "$rotation" <<'PY'

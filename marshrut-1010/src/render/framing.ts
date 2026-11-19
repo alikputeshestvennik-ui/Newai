@@ -1,6 +1,5 @@
-export function harborFrame(width: number, height: number) {
-  const aspect = width / height;
-  const halfHeight = Math.max(9.5, 6.5 / aspect);
+export const harborFieldOfView = 50;
 
-  return { halfWidth: halfHeight * aspect, halfHeight };
+export function followCameraDistance(aspect: number) {
+  return 5.6 + Math.min(1.5, Math.max(0, (0.75 - aspect) * 4));
 }

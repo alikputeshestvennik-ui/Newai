@@ -45,3 +45,52 @@ test('renders the bundled harbor and resizes it when the phone rotates', async (
   expect(externalRequests).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+test('walks and looks with independent touches, then stops on cancellation', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  const stick = page.getByRole('img', { name: ru.moveStick });
+  const canvas = page.locator('#harbor');
+  const session = await page.context().newCDPSession(page);
+  await expect(stick).toBeVisible();
+  const { x, y, width, height } = (await stick.boundingBox())!;
+  const move = { x: x + width / 2, y: y + height / 2, id: 0 };
+  const look = { x: 290, y: 400, id: 1 };
+
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [move] });
+  await expect(stick).toHaveClass('held');
+  const beforeWalk = await canvas.screenshot();
+  move.y -= 42;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move] });
+  await expect.poll(async () => (await canvas.screenshot()).equals(beforeWalk)).toBe(false);
+  move.y += 42;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move] });
+  const beforePortraitLook = await canvas.screenshot();
+
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [move, look] });
+  look.x += 78;
+  look.y += 66;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move, look] });
+  await expect.poll(async () => (await canvas.screenshot()).equals(beforePortraitLook)).toBe(false);
+  move.y -= 42;
+  const beforeSecondWalk = await canvas.screenshot();
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move, look] });
+  await expect.poll(async () => (await canvas.screenshot()).equals(beforeSecondWalk)).toBe(false);
+  await expect(stick).toHaveClass('held');
+  await session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+  await expect(stick).not.toHaveClass('held');
+  const afterCancel = await canvas.screenshot();
+  expect((await canvas.screenshot()).equals(afterCancel)).toBe(true);
+
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect(canvas).toHaveAttribute('width', '1266');
+  const beforeLook = await canvas.screenshot();
+  const right = { x: 600, y: 150, id: 1 };
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [right] });
+  right.x -= 95;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [right] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect.poll(async () => (await canvas.screenshot()).equals(beforeLook)).toBe(false);
+  await expect(stick).toBeVisible();
+  await expect(stick).not.toHaveClass('held');
+});

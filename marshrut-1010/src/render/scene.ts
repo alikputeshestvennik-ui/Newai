@@ -1,7 +1,10 @@
 import {
-  Color, DirectionalLight, HemisphereLight, OrthographicCamera, Scene, WebGLRenderer,
+  Color, DirectionalLight, HemisphereLight, Scene, WebGLRenderer,
 } from 'three';
-import { harborFrame } from './framing';
+import { bindHarborControls } from '../player/controls';
+import { createWalker, walk } from '../player/movement';
+import { createFollowCamera } from './follow-camera';
+import { buildMark } from './mark';
 import { buildPier } from './pier';
 
 export interface HarborStats {
@@ -12,6 +15,7 @@ export interface HarborStats {
 
 export function showHarbor(
   canvas: HTMLCanvasElement,
+  stick: HTMLElement,
   onReady: () => void,
   onContextLost: () => void,
   onStats?: (stats: HarborStats) => void,
@@ -26,11 +30,11 @@ export function showHarbor(
   scene.add(sun);
 
   const { pier, boats } = buildPier();
-  scene.add(pier);
-
-  const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 130);
-  camera.position.set(12, 14, 20);
-  camera.lookAt(0, 0.8, -1.65);
+  const walker = createWalker();
+  const mark = buildMark();
+  scene.add(pier, mark.root);
+  const follow = createFollowCamera();
+  const controls = bindHarborControls(canvas, stick, follow.look, schedule);
 
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
   let frameId = 0;
@@ -39,6 +43,7 @@ export function showHarbor(
   let ready = false;
   let sampleStart = 0;
   let frames = 0;
+  let lastFrame = 0;
 
   function schedule() {
     if (!frameId && !contextLost && !document.hidden) {
@@ -48,6 +53,7 @@ export function showHarbor(
 
   function resize() {
     needsResize = true;
+    controls.reset();
     schedule();
   }
 
@@ -57,20 +63,22 @@ export function showHarbor(
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
       if (!width || !height) return;
-      const { halfWidth, halfHeight } = harborFrame(width, height);
-      camera.left = -halfWidth;
-      camera.right = halfWidth;
-      camera.top = halfHeight;
-      camera.bottom = -halfHeight;
-      camera.updateProjectionMatrix();
+      follow.resize(width, height);
       renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
       renderer.setSize(width, height, false);
       needsResize = false;
     }
 
+    const elapsedSeconds = lastFrame ? (now - lastFrame) / 1000 : 0;
+    lastFrame = now;
+    const { sideways, forward } = controls.movement;
+    const moved = walk(walker, sideways, forward, follow.yaw, elapsedSeconds);
+    mark.root.position.set(walker.x, walker.y, walker.z);
+    mark.pose(walker.heading, moved, motion.matches);
+    follow.follow(walker.x, walker.y, walker.z);
     boats[0].position.y = motion.matches ? 0 : Math.sin(now / 1150) * 0.054;
     boats[1].position.y = motion.matches ? 0 : Math.sin(now / 1090 + 1.5) * 0.07;
-    renderer.render(scene, camera);
+    renderer.render(scene, follow.camera);
     if (!ready) {
       ready = true;
       onReady();
@@ -87,7 +95,8 @@ export function showHarbor(
         frames = 1;
       }
     }
-    if (!motion.matches || onStats) schedule();
+    if (!motion.matches || sideways || forward || onStats) schedule();
+    else lastFrame = 0;
   }
 
   canvas.addEventListener('webglcontextlost', (event) => {
@@ -96,6 +105,8 @@ export function showHarbor(
     ready = false;
     cancelAnimationFrame(frameId);
     frameId = 0;
+    lastFrame = 0;
+    controls.reset();
     onContextLost();
   });
 
@@ -109,9 +120,11 @@ export function showHarbor(
   document.addEventListener('visibilitychange', () => {
     sampleStart = 0;
     frames = 0;
+    lastFrame = 0;
     if (document.hidden) {
       cancelAnimationFrame(frameId);
       frameId = 0;
+      controls.reset();
     } else {
       resize();
     }

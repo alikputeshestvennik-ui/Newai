@@ -5,10 +5,12 @@ import './style.css';
 const canvas = document.querySelector<HTMLCanvasElement>('#harbor')!;
 const status = document.querySelector<HTMLParagraphElement>('#status')!;
 const stats = document.querySelector<HTMLOutputElement>('#stats')!;
+const stick = document.querySelector<HTMLElement>('#move-stick')!;
 
 document.querySelector('#title')!.textContent = ru.title;
 document.querySelector('#place')!.textContent = ru.place;
 status.textContent = ru.loading;
+stick.setAttribute('aria-label', ru.moveStick);
 const showStats = new URLSearchParams(location.search).has('stats');
 
 function updateStats({ fps, calls, triangles }: HarborStats) {
@@ -22,9 +24,14 @@ function updateStats({ fps, calls, triangles }: HarborStats) {
 try {
   showHarbor(
     canvas,
-    () => { status.textContent = ru.ready; },
+    stick,
+    () => {
+      status.textContent = ru.ready;
+      stick.hidden = false;
+    },
     () => {
       status.textContent = ru.contextLost;
+      stick.hidden = true;
       stats.hidden = true;
     },
     showStats ? updateStats : undefined,
