@@ -15,10 +15,25 @@ expect_scene() {
   local rotation="$2"
   local view=/sdcard/route-window.xml
   local expected_rotation=0
+  local close_x close_y
   if [[ "$rotation" == landscape ]]; then expected_rotation=1; fi
   for attempt in {1..12}; do
     adb shell uiautomator dump "$view" >/dev/null 2>&1 || continue
     adb exec-out cat "$view" > "$results/$label.xml"
+    if grep -Fq "Pixel Launcher isn't responding" "$results/$label.xml"; then
+      # A launcher ANR can cover the app on fresh GitHub-hosted emulators.
+      read -r close_x close_y < <(python3 - "$results/$label.xml" <<'PY'
+import re
+import sys
+from xml.etree import ElementTree
+
+button = ElementTree.parse(sys.argv[1]).find('.//node[@resource-id="android:id/aerr_close"]')
+left, top, right, bottom = map(int, re.findall(r'-?\d+', button.attrib['bounds']))
+print((left + right) // 2, (top + bottom) // 2)
+PY
+      )
+      adb shell input tap "$close_x" "$close_y"
+    fi
     if grep -Fq "$ready" "$results/$label.xml" &&
        grep -q "<hierarchy rotation=\"$expected_rotation\"" "$results/$label.xml"; then
       adb exec-out screencap -p > "$results/$label.png"
