@@ -2,8 +2,9 @@
   "walkSpeed": 2.9,
   "radius": 0.24,
   "camera": {
-    "dragSensitivity": 0.008,
-    "initialPitch": 0.49,
+    "walkYaw": -1.7,
+    "walkPitch": 0.42,
+    "lookSpeed": 1.65,
     "minPitch": 0.22,
     "maxPitch": 1.02
   }

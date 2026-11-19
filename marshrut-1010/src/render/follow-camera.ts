@@ -16,9 +16,9 @@ export function createFollowCamera() {
     new Box3().setFromCenterAndSize(new Vector3(x, y, z), new Vector3(width, height, depth))
   ));
   const settings = tuning.camera;
-  let yaw = 0;
-  let viewYaw = yaw;
-  let pitch = settings.initialPitch;
+  let yaw = settings.walkYaw;
+  let pitch = settings.walkPitch;
+  let lookingAround = false;
 
   function clearDistance(angle: number, desiredDistance: number, bearing: number) {
     const horizontal = Math.cos(angle);
@@ -35,10 +35,18 @@ export function createFollowCamera() {
 
   return {
     camera,
-    get yaw() { return viewYaw; },
-    look(dx: number, dy: number) {
-      yaw = (yaw - dx * settings.dragSensitivity) % (2 * Math.PI);
-      pitch = Math.min(settings.maxPitch, Math.max(settings.minPitch, pitch - dy * settings.dragSensitivity));
+    walkYaw: settings.walkYaw,
+    resetLook() {
+      yaw = settings.walkYaw;
+      pitch = settings.walkPitch;
+      lookingAround = false;
+    },
+    look(x: number, y: number, seconds: number) {
+      if (seconds <= 0) return;
+      const turn = settings.lookSpeed * Math.min(seconds, 0.1);
+      yaw = (yaw - x * turn) % (2 * Math.PI);
+      pitch = Math.min(settings.maxPitch, Math.max(settings.minPitch, pitch + y * turn));
+      lookingAround = true;
     },
     resize(width: number, height: number) {
       camera.aspect = width / height;
@@ -48,9 +56,9 @@ export function createFollowCamera() {
       target.set(x, y + 1.25, z);
       let range = followCameraDistance(camera.aspect);
       let angle = pitch;
-      viewYaw = yaw;
+      let viewYaw = yaw;
       let distance = clearDistance(angle, range, viewYaw);
-      if (distance < closeDistance) {
+      if (lookingAround && distance < closeDistance) {
         // Lift the view by a wall before it gets too close to Mark.
         range = closeDistance;
         let low = pitch;

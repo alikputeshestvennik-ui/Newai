@@ -27,11 +27,9 @@ try {
     stick,
     () => {
       status.textContent = ru.ready;
-      stick.hidden = false;
     },
     () => {
       status.textContent = ru.contextLost;
-      stick.hidden = true;
       stats.hidden = true;
     },
     showStats ? updateStats : undefined,

@@ -1,89 +1,89 @@
+const deadZone = 0.12;
+const lookRadius = 44;
+
+function createStick(radius: number) {
+  return { pointer: null as number | null, centerX: 0, centerY: 0, radius, x: 0, y: 0 };
+}
+
+function deflect(stick: ReturnType<typeof createStick>, event: PointerEvent) {
+  const dx = (event.clientX - stick.centerX) / stick.radius;
+  const dy = (event.clientY - stick.centerY) / stick.radius;
+  const length = Math.hypot(dx, dy);
+  const strength = Math.max(0, (Math.min(length, 1) - deadZone) / (1 - deadZone));
+  const scale = length > 0 ? strength / length : 0;
+  stick.x = dx * scale;
+  stick.y = dy * scale;
+}
+
 export function bindHarborControls(
   canvas: HTMLCanvasElement,
-  stick: HTMLElement,
-  look: (dx: number, dy: number) => void,
+  moveStick: HTMLElement,
   wake: () => void,
 ) {
-  const movement = { sideways: 0, forward: 0 };
-  let stickPointer: number | null = null;
-  let lookPointer: number | null = null;
-  let lastX = 0;
-  let lastY = 0;
-  let centerX = 0;
-  let centerY = 0;
-  let radius = 1;
+  const movement = createStick(1);
+  const look = createStick(lookRadius);
 
-  function updateStick(event: PointerEvent) {
-    const x = (event.clientX - centerX) / radius;
-    const y = (event.clientY - centerY) / radius;
-    const length = Math.hypot(x, y);
-    const scale = Math.max(1, length);
-    const strength = Math.max(0, (Math.min(length, 1) - 0.12) / 0.88);
-    movement.sideways = length ? x / length * strength : 0;
-    movement.forward = length ? -y / length * strength : 0;
-    stick.style.setProperty('--stick-x', `${x / scale * radius}px`);
-    stick.style.setProperty('--stick-y', `${y / scale * radius}px`);
-    wake();
+  function isMoving() {
+    return movement.x !== 0 || movement.y !== 0;
   }
 
-  function releaseStick(pointer: number | null) {
-    if (pointer === null || pointer !== stickPointer) return;
-    stickPointer = null;
-    movement.sideways = 0;
-    movement.forward = 0;
-    stick.style.removeProperty('--stick-x');
-    stick.style.removeProperty('--stick-y');
-    stick.classList.remove('held');
-    if (stick.hasPointerCapture(pointer)) stick.releasePointerCapture(pointer);
-    wake();
-  }
-
-  function releaseLook(pointer: number | null) {
-    if (pointer === null || pointer !== lookPointer) return;
-    lookPointer = null;
+  function release(stick: typeof movement) {
+    const { pointer } = stick;
+    if (pointer === null) return;
+    stick.pointer = null;
+    stick.x = 0;
+    stick.y = 0;
     if (canvas.hasPointerCapture(pointer)) canvas.releasePointerCapture(pointer);
+    if (stick === movement) moveStick.hidden = true;
+    wake();
   }
-
-  stick.addEventListener('pointerdown', (event) => {
-    if (stickPointer !== null || event.button !== 0) return;
-    const bounds = stick.getBoundingClientRect();
-    centerX = bounds.left + bounds.width / 2;
-    centerY = bounds.top + bounds.height / 2;
-    radius = bounds.width * 0.31;
-    stickPointer = event.pointerId;
-    stick.setPointerCapture(event.pointerId);
-    stick.classList.add('held');
-    updateStick(event);
-  });
-  stick.addEventListener('pointermove', (event) => {
-    if (event.pointerId === stickPointer) updateStick(event);
-  });
 
   canvas.addEventListener('pointerdown', (event) => {
-    if (lookPointer !== null || event.button !== 0 || event.offsetX < canvas.clientWidth / 2) return;
-    lookPointer = event.pointerId;
-    lastX = event.clientX;
-    lastY = event.clientY;
+    if (event.button !== 0) return;
+    const bounds = canvas.getBoundingClientRect();
+    const stick = event.clientX < bounds.left + bounds.width / 2 ? movement : look;
+    if (stick.pointer !== null || (stick === look && isMoving())) return;
+
+    stick.centerX = event.clientX;
+    stick.centerY = event.clientY;
+    stick.pointer = event.pointerId;
     canvas.setPointerCapture(event.pointerId);
+    if (stick === movement) {
+      moveStick.style.setProperty('--stick-center-x', `${stick.centerX}px`);
+      moveStick.style.setProperty('--stick-center-y', `${stick.centerY}px`);
+      moveStick.style.removeProperty('--stick-x');
+      moveStick.style.removeProperty('--stick-y');
+      moveStick.hidden = false;
+      stick.radius = moveStick.offsetWidth * 0.31;
+    }
   });
+
   canvas.addEventListener('pointermove', (event) => {
-    if (event.pointerId !== lookPointer) return;
-    look(event.clientX - lastX, event.clientY - lastY);
-    lastX = event.clientX;
-    lastY = event.clientY;
+    if (event.pointerId === movement.pointer) {
+      deflect(movement, event);
+      moveStick.style.setProperty('--stick-x', `${movement.x * movement.radius}px`);
+      moveStick.style.setProperty('--stick-y', `${movement.y * movement.radius}px`);
+      if (isMoving()) release(look);
+    } else if (event.pointerId === look.pointer) {
+      deflect(look, event);
+    } else {
+      return;
+    }
     wake();
   });
 
   for (const event of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) {
-    stick.addEventListener(event, ({ pointerId }) => releaseStick(pointerId));
-    canvas.addEventListener(event, ({ pointerId }) => releaseLook(pointerId));
+    canvas.addEventListener(event, ({ pointerId }) => {
+      if (pointerId === movement.pointer) release(movement);
+      if (pointerId === look.pointer) release(look);
+    });
   }
 
   function reset() {
-    releaseStick(stickPointer);
-    releaseLook(lookPointer);
+    release(movement);
+    release(look);
   }
   window.addEventListener('blur', reset);
 
-  return { movement, reset };
+  return { movement, look, reset };
 }

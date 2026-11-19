@@ -28,7 +28,7 @@ function floorHeight(x: number, z: number) {
 export function createWalker() {
   const x = 0;
   const z = 3.5;
-  return { x, y: floorHeight(x, z), z, heading: Math.PI };
+  return { x, y: floorHeight(x, z), z, heading: Math.PI + tuning.camera.walkYaw };
 }
 
 export function walk(
