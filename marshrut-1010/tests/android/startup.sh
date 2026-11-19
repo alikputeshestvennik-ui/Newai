@@ -13,10 +13,13 @@ expect_scene() {
   local label="$1"
   local rotation="$2"
   local view=/sdcard/route-window.xml
+  local expected_rotation=0
+  if [[ "$rotation" == landscape ]]; then expected_rotation=1; fi
   for attempt in {1..12}; do
     adb shell uiautomator dump "$view" >/dev/null 2>&1 || continue
     adb exec-out cat "$view" > "$results/$label.xml"
-    if grep -q '3D-сцена запущена' "$results/$label.xml"; then
+    if grep -q '3D-сцена запущена' "$results/$label.xml" &&
+       grep -q "<hierarchy rotation=\"$expected_rotation\"" "$results/$label.xml"; then
       adb exec-out screencap -p > "$results/$label.png"
       python3 - "$results/$label.png" "$rotation" <<'PY'
 import struct
@@ -31,6 +34,7 @@ PY
     fi
     sleep 2
   done
+  adb exec-out screencap -p > "$results/$label.png"
   cat "$results/$label.xml" >&2 || true
   return 1
 }
@@ -42,6 +46,8 @@ adb shell svc wifi disable
 adb shell svc data disable
 adb shell input keyevent KEYCODE_WAKEUP
 adb shell wm dismiss-keyguard
+# This emulator is fresh and would otherwise show a system tutorial over the app.
+adb shell settings put secure immersive_mode_confirmations confirmed
 adb shell cmd window user-rotation lock 0
 adb shell am force-stop "$app"
 adb shell am start -W -n "$activity"
