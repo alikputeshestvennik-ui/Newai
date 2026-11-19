@@ -1,0 +1,125 @@
+name: Маршрут 10:10 · APK
+
+on:
+  push:
+    branches: [release/marshrut-1010]
+    paths: ['marshrut-1010/**', '.github/workflows/marshrut-1010.yml']
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: marshrut-1010
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: marshrut-1010/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Проверить сцену в браузере
+        run: |
+          if command -v google-chrome >/dev/null; then
+            export ROUTE_CHROME="$(command -v google-chrome)"
+          else
+            npx playwright install chromium
+          fi
+          npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Route-1010-Browser
+          path: marshrut-1010/test-results
+      - run: npx cap sync android
+      - run: ./gradlew test lint assembleDebug assembleRelease
+        working-directory: marshrut-1010/android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Route-1010-Unsigned
+          retention-days: 1
+          path: marshrut-1010/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+
+  sign:
+    if: github.repository == 'alikputeshestvennik-ui/Newai' && github.ref == 'refs/heads/release/marshrut-1010'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Route-1010-Unsigned
+      - name: Подписать и проверить APK
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/route.keystore"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "${KEYSTORE_B64:?}" | base64 -d > "$key"
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          "$tools/zipalign" -f 4 app-release-unsigned.apk aligned.apk
+          "$tools/apksigner" sign --ks "$key" --ks-pass env:STORE_PASSWORD --key-pass env:KEY_PASSWORD --out Route-1010.apk aligned.apk
+          "$tools/apksigner" verify --verbose Route-1010.apk
+          "$tools/zipalign" -c 4 Route-1010.apk
+          analyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          test "$("$analyzer" manifest application-id Route-1010.apk)" = ru.alim.marshrut1010
+          test "$("$analyzer" manifest debuggable Route-1010.apk)" = false
+          permissions="$("$analyzer" manifest permissions Route-1010.apk)"
+          if [[ "$permissions" == *android.permission* ]]; then
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Route-1010-APK
+          path: Route-1010.apk
+          if-no-files-found: error
+
+  android:
+    needs: sign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Route-1010-APK
+      - name: Включить ускорение эмулятора
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          emulator-options: -no-window -no-snapshot -gpu swiftshader -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash marshrut-1010/tests/android/startup.sh Route-1010.apk marshrut-1010/android-startup
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Route-1010-Android-Check
+          path: marshrut-1010/android-startup/

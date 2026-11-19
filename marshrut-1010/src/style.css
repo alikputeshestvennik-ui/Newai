@@ -1,0 +1,68 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  color: #fff5df;
+  background: #133631;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+#harbor {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.title,
+#status,
+#stats {
+  position: fixed;
+  margin: 0;
+}
+
+.title {
+  top: max(1.2rem, env(safe-area-inset-top));
+  left: max(1.3rem, env(safe-area-inset-left));
+  text-shadow: 0 2px 12px #082d28, 0 4px 28px #082d28;
+}
+
+.title p {
+  margin: 0 0 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+h1 {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: clamp(1.9rem, 6vmin, 3.4rem);
+  line-height: 1.1;
+  font-weight: 500;
+}
+
+#status,
+#stats {
+  width: fit-content;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: #102e2aee;
+  font-size: 0.78rem;
+}
+
+#status {
+  left: max(1.3rem, env(safe-area-inset-left));
+  right: max(1.3rem, env(safe-area-inset-right));
+  bottom: max(1.2rem, env(safe-area-inset-bottom));
+  max-width: min(calc(100% - 4rem), 26rem);
+}
+
+#stats {
+  right: max(1.3rem, env(safe-area-inset-right));
+  bottom: calc(max(1.2rem, env(safe-area-inset-bottom)) + 2.5rem);
+  font-family: ui-monospace, monospace;
+}
