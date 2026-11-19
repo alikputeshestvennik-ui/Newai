@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import ru from '../../data/ru.json';
+
+const ru = JSON.parse(readFileSync(new URL('../../data/ru.json', import.meta.url), 'utf8'));
 
 test('renders the bundled harbor and resizes it when the phone rotates', async ({ page }, testInfo) => {
   const externalRequests: string[] = [];
