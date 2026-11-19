@@ -5,12 +5,14 @@ import { createWalker } from '../src/player/movement';
 import { createFollowCamera } from '../src/render/follow-camera';
 import { followCameraDistance, harborFieldOfView } from '../src/render/framing';
 
+const targetHeight = 1.25;
+
 function turnTo(follow: ReturnType<typeof createFollowCamera>, yaw: number) {
-  const change = follow.walkYaw - yaw;
-  const stepCount = Math.ceil(Math.abs(change) / (tuning.camera.lookSpeed * 0.1));
-  for (let step = 0; step < stepCount; step++) {
-    follow.look(Math.sign(change), 0, Math.abs(change) / (stepCount * tuning.camera.lookSpeed));
-  }
+  follow.look((tuning.camera.walkYaw - yaw) / tuning.camera.lookRadiansPerPixel, 0);
+}
+
+function bearing(follow: ReturnType<typeof createFollowCamera>, x: number, z: number) {
+  return Math.atan2(follow.camera.position.x - x, follow.camera.position.z - z);
 }
 
 describe('pier camera framing', () => {
@@ -30,30 +32,75 @@ describe('pier camera framing', () => {
     const follow = createFollowCamera();
     const { x, y, z } = createWalker();
     const direction = new Vector3();
-    follow.follow(x, y, z);
+    follow.follow(x, y, z, 0.016);
     const initialHeight = follow.camera.getWorldDirection(direction).y;
 
-    follow.look(0, -1, 0.1);
-    follow.follow(x, y, z);
+    follow.look(0, -25);
+    follow.follow(x, y, z, 0.016);
     expect(follow.camera.getWorldDirection(direction).y).toBeGreaterThan(initialHeight);
 
-    follow.resetLook();
-    follow.look(0, 1, 0.1);
-    follow.follow(x, y, z);
+    follow.look(0, 50);
+    follow.follow(x, y, z, 0.016);
     expect(follow.camera.getWorldDirection(direction).y).toBeLessThan(initialHeight);
+  });
+
+  it('returns behind Mark gradually by the shortest arc when he starts walking', () => {
+    const follow = createFollowCamera();
+    const x = 0;
+    const z = 2;
+    const y = 0.615;
+    turnTo(follow, Math.PI - 0.5);
+    follow.look(0, -20);
+    follow.follow(x, y, z, 0.016);
+    const startYaw = bearing(follow, x, z);
+    const startHeight = follow.camera.position.y;
+    const heading = 0.5;
+    follow.alignBehind(heading);
+    follow.follow(x, y, z, 0.016);
+    expect(bearing(follow, x, z)).toBeGreaterThan(startYaw);
+    expect(bearing(follow, x, z)).toBeLessThan(Math.PI);
+    expect(follow.camera.position.y).toBeGreaterThan(startHeight);
+    expect(follow.camera.position.y).toBeLessThan(y + targetHeight + followCameraDistance(1)
+      * Math.sin(tuning.camera.walkPitch));
+
+    for (let frame = 0; frame < 90; frame++) follow.follow(x, y, z, 0.016);
+    expect(bearing(follow, x, z)).toBeCloseTo(heading - Math.PI);
+    expect(follow.camera.position.y).toBeCloseTo(y + targetHeight + followCameraDistance(1)
+      * Math.sin(tuning.camera.walkPitch));
+  });
+
+  it('lowers the camera smoothly after leaving the pavilion', () => {
+    const follow = createFollowCamera();
+    follow.follow(5.4, 1.01, -6.65, 0.016);
+    const raised = follow.camera.position.y;
+    const normal = 1.01 + targetHeight + followCameraDistance(1) * Math.sin(tuning.camera.walkPitch);
+    follow.follow(5.4, 1.01, -2, 0.016);
+    expect(follow.camera.position.y).toBeLessThan(raised);
+    expect(follow.camera.position.y).toBeGreaterThan(normal);
+    for (let frame = 0; frame < 75; frame++) follow.follow(5.4, 1.01, -2, 0.016);
+    expect(follow.camera.position.y).toBeCloseTo(normal);
+  });
+
+  it('clears the pavilion in the walking view without turning sideways', () => {
+    const follow = createFollowCamera();
+    follow.follow(5.4, 1.01, -6.65, 0.016);
+    const offset = follow.camera.position.clone().sub(new Vector3(5.4, 2.26, -6.65));
+    expect(offset.length()).toBeCloseTo(followCameraDistance(1));
+    expect(Math.atan2(offset.x, offset.z)).toBeCloseTo(tuning.camera.walkYaw);
+    expect(follow.camera.position.y).toBeGreaterThan(3.66);
   });
 
   it('raises the camera to clear the wall beside the pavilion', () => {
     const follow = createFollowCamera();
     turnTo(follow, -Math.PI / 2);
-    follow.follow(4.46, 1.01, -6.65);
+    follow.follow(4.46, 1.01, -6.65, 0.016);
     expect(follow.camera.position.y).toBeGreaterThan(3.66);
   });
 
   it('finds a clear view under the awning when the pavilion is directly behind the camera', () => {
     const follow = createFollowCamera();
     turnTo(follow, -Math.PI);
-    follow.follow(0, 1.01, -4.72);
+    follow.follow(0, 1.01, -4.72, 0.016);
     expect(follow.camera.position.distanceTo(new Vector3(0, 2.26, -4.72))).toBeGreaterThan(2);
   });
 });

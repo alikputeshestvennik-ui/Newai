@@ -46,6 +46,39 @@ test('renders the bundled harbor and resizes it when the phone rotates', async (
   expect(errors).toEqual([]);
 });
 
+test('camera turns with the swipe and stays still while the finger holds that spot', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  await expect(page.getByText(ru.ready, { exact: true })).toBeVisible();
+  const canvas = page.locator('#harbor');
+  const touch = await page.context().newCDPSession(page);
+  const start = await canvas.screenshot();
+  const finger = { x: 305, y: 400, id: 1 };
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [finger] });
+  expect((await canvas.screenshot()).equals(start)).toBe(true);
+
+  finger.x -= 36;
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [finger] });
+  await expect.poll(async () => (await canvas.screenshot()).equals(start)).toBe(false);
+  const afterSwipe = await canvas.screenshot();
+
+  // Leave the finger down across multiple animation frames.
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    let frames = 12;
+    function tick() {
+      if (--frames === 0) resolve();
+      else requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }));
+  expect((await canvas.screenshot()).equals(afterSwipe)).toBe(true);
+
+  finger.x += 1;
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [finger] });
+  expect((await canvas.screenshot()).equals(afterSwipe)).toBe(true);
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+});
+
 test('shows the movement stick under the finger and only looks around while stopped', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
@@ -79,7 +112,14 @@ test('shows the movement stick under the finger and only looks around while stop
   move.y += 22;
   await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move, look] });
   await expect(stick.locator('span')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
-  const afterWalk = await canvas.screenshot();
+  // Let the walking view settle, even if the movement stick was released mid-turn.
+  let afterWalk = await canvas.screenshot();
+  await expect.poll(async () => {
+    const frame = await canvas.screenshot();
+    const still = frame.equals(afterWalk);
+    afterWalk = frame;
+    return still;
+  }).toBe(true);
   look.x += 44;
   await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move, look] });
   expect((await canvas.screenshot()).equals(afterWalk)).toBe(true);

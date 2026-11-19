@@ -34,7 +34,7 @@ export function showHarbor(
   const mark = buildMark();
   scene.add(pier, mark.root);
   const follow = createFollowCamera();
-  const controls = bindHarborControls(canvas, stick, schedule);
+  const controls = bindHarborControls(canvas, stick, schedule, follow.look);
 
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
   let frameId = 0;
@@ -44,6 +44,8 @@ export function showHarbor(
   let sampleStart = 0;
   let frames = 0;
   let lastFrame = 0;
+  let walking = false;
+  let movementYaw = 0;
 
   function schedule() {
     if (!frameId && !contextLost && !document.hidden) {
@@ -72,13 +74,15 @@ export function showHarbor(
     const elapsedSeconds = lastFrame ? (now - lastFrame) / 1000 : 0;
     lastFrame = now;
     const { x: sideways, y: down } = controls.movement;
-    const { x: lookX, y: lookY } = controls.look;
-    if (sideways || down) follow.resetLook();
-    else if (lookX || lookY) follow.look(lookX, lookY, elapsedSeconds);
-    const moved = walk(walker, sideways, -down, follow.walkYaw, elapsedSeconds);
+    const wantsToWalk = sideways !== 0 || down !== 0;
+    // Keep the stick direction stable while the camera turns behind Mark.
+    if (wantsToWalk && !walking) movementYaw = walker.heading + Math.PI;
+    walking = wantsToWalk;
+    const moved = walk(walker, sideways, -down, movementYaw, elapsedSeconds);
+    if (walking) follow.alignBehind(walker.heading);
     mark.root.position.set(walker.x, walker.y, walker.z);
-    mark.pose(walker.heading, moved, motion.matches);
-    follow.follow(walker.x, walker.y, walker.z);
+    mark.pose(walker.heading, moved, elapsedSeconds, motion.matches);
+    const cameraMoving = follow.follow(walker.x, walker.y, walker.z, elapsedSeconds);
     boats[0].position.y = motion.matches ? 0 : Math.sin(now / 1150) * 0.054;
     boats[1].position.y = motion.matches ? 0 : Math.sin(now / 1090 + 1.5) * 0.07;
     renderer.render(scene, follow.camera);
@@ -98,7 +102,7 @@ export function showHarbor(
         frames = 1;
       }
     }
-    if (!motion.matches || sideways || down || lookX || lookY || onStats) schedule();
+    if (!motion.matches || walking || cameraMoving || onStats) schedule();
     else lastFrame = 0;
   }
 

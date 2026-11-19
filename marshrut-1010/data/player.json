@@ -4,7 +4,7 @@
   "camera": {
     "walkYaw": -1.7,
     "walkPitch": 0.42,
-    "lookSpeed": 1.65,
+    "lookRadiansPerPixel": 0.009,
     "minPitch": 0.22,
     "maxPitch": 1.02
   }
