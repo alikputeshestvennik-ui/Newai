@@ -144,3 +144,48 @@ test('walks on hold, steps sideways, and steers with a second finger', async ({ 
   await session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
   await expect(stick).toBeHidden();
 });
+
+test('picks up the ticket, reopens it, and remembers the solved passage', async ({ page }, testInfo) => {
+  test.setTimeout(95_000);
+  const words = ru.ticket;
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  await expect(page.getByText(words.find, { exact: true })).toBeVisible();
+  const pickup = page.getByRole('button', { name: words.pickUp, exact: true });
+  const open = page.getByRole('button', { name: words.open, exact: true });
+  const close = page.getByRole('button', { name: words.close, exact: true });
+  const dialog = page.getByRole('dialog', { name: words.title });
+  const session = await page.context().newCDPSession(page);
+  const move = { x: 200, y: 280, id: 0 };
+  const startWalking = () => session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [move] });
+  const stopWalking = () => session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+
+  await expect(pickup).toBeHidden();
+  await expect(open).toBeHidden();
+  await startWalking();
+  await expect(pickup).toBeVisible({ timeout: 20_000 });
+  await stopWalking();
+  await pickup.tap();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('img', { name: words.symbol })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('ticket.png') });
+  await close.tap();
+  await expect(page.getByText(words.choose, { exact: true })).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByText(words.choose, { exact: true })).toBeVisible();
+  await open.tap();
+  await expect(dialog).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText(ru.rotateHint, { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 844, height: 390 });
+
+  await startWalking();
+  await expect(page.getByText(words.complete, { exact: true })).toBeVisible({ timeout: 35_000 });
+  await stopWalking();
+  await page.screenshot({ path: testInfo.outputPath('orientation-found.png') });
+  await page.reload();
+  await expect(page.getByText(words.complete, { exact: true })).toBeVisible();
+  await expect(pickup).toBeHidden();
+});

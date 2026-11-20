@@ -1,11 +1,13 @@
 import {
   Color, DirectionalLight, HemisphereLight, Scene, WebGLRenderer,
 } from 'three';
+import { createTicketQuest, type TicketProgress, type TicketState } from '../harbor/ticket';
 import { bindHarborControls } from '../player/controls';
 import { createWalker, steerWalker, updateWalker } from '../player/movement';
 import { createFollowCamera } from './follow-camera';
 import { loadMark } from './mark';
 import { buildPier } from './pier';
+import { buildTicket } from './ticket';
 
 export interface HarborStats {
   fps: number;
@@ -13,13 +15,16 @@ export interface HarborStats {
   triangles: number;
 }
 
-export async function showHarbor(
-  canvas: HTMLCanvasElement,
-  stick: HTMLElement,
-  onReady: () => void,
-  onContextLost: () => void,
-  onStats?: (stats: HarborStats) => void,
-) {
+interface HarborOptions {
+  ticketProgress: TicketProgress;
+  onTicketChange: (state: TicketState) => void;
+  onReady: () => void;
+  onContextLost: () => void;
+  onStats?: (stats: HarborStats) => void;
+}
+
+export async function showHarbor(canvas: HTMLCanvasElement, stick: HTMLElement, options: HarborOptions) {
+  const { ticketProgress, onTicketChange, onReady, onContextLost, onStats } = options;
   const mark = await loadMark();
   const renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
   const scene = new Scene();
@@ -32,6 +37,10 @@ export async function showHarbor(
 
   const { pier, boats } = buildPier();
   const walker = createWalker();
+  const ticketQuest = createTicketQuest(ticketProgress);
+  const ticket = buildTicket();
+  ticket.visible = ticketProgress === 'find';
+  pier.add(ticket);
   scene.add(pier, mark.root);
   const follow = createFollowCamera();
   const controls = bindHarborControls(canvas, stick, schedule, (dx, dy, walking) => {
@@ -81,6 +90,7 @@ export async function showHarbor(
     const walking = pointer !== null;
     const { x, z } = walker;
     updateWalker(walker, walking, sideways, dt, motion.matches);
+    if (ticketQuest.update(x, z, walker)) onTicketChange(ticketQuest.state);
     mark.root.position.set(walker.x, walker.y, walker.z);
     const posing = mark.pose(walker.heading, walker.x - x, walker.z - z, dt, motion.matches);
     const cameraMoving = follow.follow(walker.x, walker.y, walker.z, walker.heading, walking, dt);
@@ -138,4 +148,21 @@ export async function showHarbor(
     }
   });
   schedule();
+
+  return {
+    pickUpTicket() {
+      if (!ready || !ticketQuest.pickUp()) return false;
+      ticket.visible = false;
+      onTicketChange(ticketQuest.state);
+      schedule();
+      return true;
+    },
+    stopWalking() {
+      controls.reset();
+      walker.forward = 0;
+      walker.sideways = 0;
+      walker.targetHeading = walker.heading;
+      schedule();
+    },
+  };
 }

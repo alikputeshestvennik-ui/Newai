@@ -1,8 +1,10 @@
 import {
   BoxGeometry, CylinderGeometry, Group, InstancedMesh, Mesh, MeshLambertMaterial, Matrix4, Vector3,
 } from 'three';
+import { gateWidth } from '../../data/harbor-ticket.json';
+import signs from '../../data/signs.json';
 import {
-  awning, awningPosts, bollards, decks, lamps, pavilion, planters, quay, steps, type HarborBox,
+  awning, awningPosts, bollards, decks, lamps, pavilion, planters, quay, signFace, steps, ticketStand, type HarborBox,
 } from '../harbor/layout';
 import { buildSigns } from './signs';
 
@@ -132,9 +134,15 @@ export function buildPier() {
     piece('glass', x, 2.02, -5.038, 0.78, 1.56, 0.048);
   }
   for (const post of awningPosts) place('wall', post);
+  for (const { x } of signs) {
+    piece('concrete', x, quay.y + quay.height / 2, signFace.z, gateWidth, 0.01, 0.14);
+  }
 
   for (const step of steps) place('concrete', step);
   for (const deck of decks) place('wood', deck);
+  const { x, y, z, width, height, depth } = ticketStand;
+  piece('wood', x, y - 0.025, z, width - 0.11, height - 0.05, depth - 0.1);
+  piece('steel', x, y + height / 2 - 0.027, z, width, 0.054, depth);
   for (let step = 0; step <= 26; step++) {
     piece('grain', 0, 0.618, -2 + step * 0.333, 4.12, 0.012, 0.025);
   }

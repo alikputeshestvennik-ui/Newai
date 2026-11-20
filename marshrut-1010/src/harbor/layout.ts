@@ -1,6 +1,10 @@
+import { pickup } from '../../data/harbor-ticket.json';
+
 export const quay = { x: 0, y: 0.93, z: -10, width: 49, height: 0.16, depth: 14 };
 export const pavilion = { x: 0, y: 2.18, z: -6.65, width: 8.4, height: 2.36, depth: 3.2 };
 export const awning = { x: 0, y: 2.96, z: -4.52, width: 7.7, height: 0.13, depth: 0.86 };
+export const signFace = { y: 3.25, z: awning.z + awning.depth / 2 + 0.025, width: 1.92, height: 0.88 };
+export const ticketStand = { x: pickup.x, y: 1, z: pickup.z, width: 0.62, height: 0.77, depth: 0.46 };
 export const awningPosts = [-3.75, -1.25, 1.25, 3.75].map((x) => (
   { x, y: 1.98, z: -4.15, width: 0.13, height: 1.96, depth: 0.13 }
 ));
@@ -28,7 +32,7 @@ export const bollards = [-1, 1].flatMap((side) => (
 // The back edge meets the facades behind the pavilion.
 const openQuay = { ...quay, z: -7.15, depth: 8.3 };
 export const walkSurfaces = [openQuay, ...steps, ...decks];
-export const walkingObstacles = [pavilion, ...awningPosts, ...planters, ...lamps, ...bollards];
+export const walkingObstacles = [pavilion, ...awningPosts, ...planters, ...lamps, ...bollards, ticketStand];
 
 export const cameraWalls = [
   pavilion,

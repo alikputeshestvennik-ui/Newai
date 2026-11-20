@@ -5,7 +5,7 @@ import signs from '../data/signs.json';
 import { createWalker } from '../src/player/movement';
 import { createFollowCamera } from '../src/render/follow-camera';
 import { followCameraDistance, harborFieldOfView } from '../src/render/framing';
-import { signFace } from '../src/render/signs';
+import { signFace } from '../src/harbor/layout';
 
 const targetHeight = 1.25;
 

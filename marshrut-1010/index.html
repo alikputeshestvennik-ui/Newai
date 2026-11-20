@@ -15,11 +15,22 @@
         <h1 id="title"></h1>
       </header>
       <div id="move-stick" role="img" hidden><span aria-hidden="true"></span></div>
+      <button id="open-ticket" class="harbor-action" type="button" hidden></button>
+      <button id="pick-up-ticket" class="harbor-action" type="button" hidden></button>
       <div class="controls">
+        <p id="objective" role="status" hidden></p>
         <p id="status" role="status"></p>
       </div>
       <output id="stats" hidden></output>
     </main>
+    <dialog id="ticket-dialog" aria-labelledby="ticket-title">
+      <h2 id="ticket-title"></h2>
+      <canvas id="ticket-symbol" role="img"></canvas>
+      <p id="ticket-clue"></p>
+      <form method="dialog">
+        <button class="harbor-action" type="submit" autofocus></button>
+      </form>
+    </dialog>
     <p id="rotate-hint"></p>
   </body>
 </html>
