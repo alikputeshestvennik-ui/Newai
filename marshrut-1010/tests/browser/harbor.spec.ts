@@ -19,6 +19,7 @@ test('renders the bundled harbor only in landscape', async ({ page }, testInfo) 
 
   const canvas = page.locator('#harbor');
   const rotateHint = page.getByText(ru.rotateHint, { exact: true });
+  const markModel = page.waitForResponse((response) => /\/assets\/mark-[^/]+\.glb$/.test(response.url()));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/?stats');
   await expect(rotateHint).toBeVisible();
@@ -26,6 +27,7 @@ test('renders the bundled harbor only in landscape', async ({ page }, testInfo) 
 
   await page.setViewportSize({ width: 844, height: 390 });
   await expect(rotateHint).toBeHidden();
+  expect((await markModel).ok()).toBe(true);
   await expect(page.getByRole('heading', { name: ru.title })).toBeVisible();
   await expect(page.getByText(ru.ready, { exact: true })).toBeVisible();
 
@@ -36,7 +38,7 @@ test('renders the bundled harbor only in landscape', async ({ page }, testInfo) 
   expect(fps).toBeGreaterThan(0);
   expect(calls).toBeGreaterThan(0);
   expect(calls).toBeLessThanOrEqual(150);
-  expect(triangles).toBeGreaterThan(0);
+  expect(triangles).toBeGreaterThan(20_000);
   expect(triangles).toBeLessThanOrEqual(200_000);
   console.log(summary);
 
@@ -53,7 +55,7 @@ test('renders the bundled harbor only in landscape', async ({ page }, testInfo) 
   expect(errors).toEqual([]);
 });
 
-test('camera turns with the swipe and stays still while the finger holds that spot', async ({ page }) => {
+test('camera turns with the swipe and stays still while the finger holds that spot', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   await expect(page.getByText(ru.ready, { exact: true })).toBeVisible();
@@ -84,6 +86,14 @@ test('camera turns with the swipe and stays still while the finger holds that sp
   await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [finger] });
   expect((await canvas.screenshot()).equals(afterSwipe)).toBe(true);
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+
+  finger.x = 455;
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [finger] });
+  finger.x += 384;
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [finger] });
+  await expect.poll(async () => (await canvas.screenshot()).equals(afterSwipe)).toBe(false);
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.screenshot({ path: testInfo.outputPath('mark-front.png') });
 });
 
 test('walks on hold, steps sideways, and steers with a second finger', async ({ page }) => {

@@ -4,7 +4,7 @@ import {
 import { bindHarborControls } from '../player/controls';
 import { createWalker, steerWalker, walk } from '../player/movement';
 import { createFollowCamera } from './follow-camera';
-import { buildMark } from './mark';
+import { loadMark } from './mark';
 import { buildPier } from './pier';
 
 export interface HarborStats {
@@ -13,13 +13,14 @@ export interface HarborStats {
   triangles: number;
 }
 
-export function showHarbor(
+export async function showHarbor(
   canvas: HTMLCanvasElement,
   stick: HTMLElement,
   onReady: () => void,
   onContextLost: () => void,
   onStats?: (stats: HarborStats) => void,
 ) {
+  const mark = await loadMark();
   const renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
   const scene = new Scene();
   scene.background = new Color(0x437a70);
@@ -31,7 +32,6 @@ export function showHarbor(
 
   const { pier, boats } = buildPier();
   const walker = createWalker();
-  const mark = buildMark();
   scene.add(pier, mark.root);
   const follow = createFollowCamera();
   const controls = bindHarborControls(canvas, stick, schedule, (dx, dy, walking) => {

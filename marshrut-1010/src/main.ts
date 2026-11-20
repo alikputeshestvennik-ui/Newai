@@ -22,20 +22,18 @@ function updateStats({ fps, calls, triangles }: HarborStats) {
     .replace('{triangles}', String(triangles));
 }
 
-try {
-  showHarbor(
-    canvas,
-    stick,
-    () => {
-      status.textContent = ru.ready;
-    },
-    () => {
-      status.textContent = ru.contextLost;
-      stats.hidden = true;
-    },
-    showStats ? updateStats : undefined,
-  );
-} catch (error) {
+void showHarbor(
+  canvas,
+  stick,
+  () => {
+    status.textContent = ru.ready;
+  },
+  () => {
+    status.textContent = ru.contextLost;
+    stats.hidden = true;
+  },
+  showStats ? updateStats : undefined,
+).catch((error) => {
   status.textContent = ru.unavailable;
   console.error(error);
-}
+});
