@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import ru from '../../data/ru.json';
-import chapter from '../../data/turkey-preview.json';
+
+const ru = JSON.parse(readFileSync(new URL('../../data/ru.json', import.meta.url), 'utf8')) as
+  typeof import('../../data/ru.json');
+const chapter = JSON.parse(readFileSync(new URL('../../data/turkey-preview.json', import.meta.url), 'utf8')) as
+  typeof import('../../data/turkey-preview.json');
 
 const words = ru.preview;
 
