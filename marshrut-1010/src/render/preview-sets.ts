@@ -14,7 +14,7 @@ const yellow = 0xe1a048;
 const blue = 0x234449;
 const cream = 0xe6c785;
 
-export function buildPreviewSets({ courier, leila }: PreviewCast) {
+export function buildPreviewSets({ courier }: PreviewCast) {
   const boxShape = new BoxGeometry(1, 1, 1);
   const hullShape = new CylinderGeometry(1, 0.65, 1, 8);
   const ringShape = new TorusGeometry(0.37, 0.085, 8, 20);
@@ -72,7 +72,6 @@ export function buildPreviewSets({ courier, leila }: PreviewCast) {
   glass.scale.set(10.42, 2.43, 0.035);
   drama.add(glass);
 
-  drama.add(courier.root, leila.root);
   const envelope = block(courier.hand, cream, 0.015, -0.034, 0.033, 0.23, 0.16, 0.025);
   envelope.rotation.z = -0.28;
   const watch = new Mesh(new CylinderGeometry(0.067, 0.067, 0.024, 16), material(0xc98a42));
@@ -151,5 +150,37 @@ export function buildPreviewSets({ courier, leila }: PreviewCast) {
     });
   }
 
-  return { drama, running, courier, leila, props: [envelope, watch, dial], board, anchors };
+  const detour = new Group();
+  water(detour, 110);
+  distantShore(detour, -26);
+  block(detour, oak, 0, -0.14, 1.9, 7.5, 0.28, 6.1);
+  block(detour, oak, -2.25, -0.14, -2.4, 2.2, 0.28, 2.5);
+  block(detour, oak, 1.34, -0.14, -4.08, 2.9, 0.28, 5.9);
+  block(detour, oak, 1.34, -0.14, -8.65, 6.2, 0.28, 3.35);
+  block(detour, darkWood, 1.34, -0.23, -7.0, 6.25, 0.38, 0.19);
+
+  function rail(x: number, near: number, far: number, color: number, posts: number) {
+    block(detour, color, x, 0.85, (near + far) / 2, 0.13, 0.12, near - far + 0.13);
+    for (let i = 0; i < posts; i++) {
+      const z = near + (far - near) * i / (posts - 1);
+      block(detour, color, x, 0.43, z, 0.12, 0.86, 0.13);
+    }
+  }
+
+  for (const x of [-0.02, 2.7]) rail(x, -0.8, -6.8, 0x285aa1, 4);
+  for (const x of [-3.26, -1.26]) rail(x, -0.8, -3.45, 0xa84036, 2);
+  block(detour, 0xa84036, -2.26, 0.59, -3.47, 2.04, 0.16, 0.12);
+
+  for (const z of [-1.5, -2.5, -3.5, -4.5, -5.5, -6.5]) {
+    block(detour, darkWood, 1.34, 0.002, z, 2.9, 0.006, 0.024);
+  }
+  for (const x of [-1.6, 4.28]) {
+    block(detour, blue, x, 1.3, -8.4, 0.16, 2.6, 0.17);
+  }
+  block(detour, blue, 1.34, 2.64, -8.4, 6.15, 0.16, 0.34);
+  const exit = buildSignPlate('linked', 1.1, 0.54);
+  exit.position.set(1.34, 2.41, -8.21);
+  detour.add(exit);
+
+  return { drama, running, detour, props: [envelope, watch, dial], board, anchors };
 }

@@ -63,7 +63,11 @@ function openJournal() {
     try { localStorage.setItem(briefingKey, 'read'); } catch {}
   }
   journalTicket.hidden = ticket.progress === 'find';
-  const earned = [ticket.progress === 'complete' && journal.orientation, preview.connected && journal.connection];
+  const earned = [
+    ticket.progress === 'complete' && journal.orientation,
+    preview.connected && journal.connection,
+    preview.helped && journal.help,
+  ];
   marks.replaceChildren();
   for (const entry of earned) {
     if (!entry) continue;

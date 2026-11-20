@@ -9,3 +9,6 @@ These source assets are [CC0](https://github.com/makehumancommunity/makehuman/bl
 `courier.glb` and `leila.glb` use the same rig and source pack. The courier uses a blended young/old face,
 middle-age skin, `male_worksuit01` and `short03`; Leila uses the young female shape and skin,
 `female_casualsuit01` and `bob02`. Both are fitted and skinned separately and include their textures.
+
+`samir.glb` uses the same CC0 rig and assets, with child proportions fitted from the MakeHuman
+child morphs, `male_casualsuit04` clothing and `short04` hair. It includes its own textures.

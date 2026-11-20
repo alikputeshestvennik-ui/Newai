@@ -337,3 +337,24 @@ h1 {
   font-size: 1.55rem;
   padding: 0;
 }
+
+.preview-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: 0.42rem;
+}
+
+.preview-actions:has(> button[hidden] + button[hidden]) {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .preview-bottom:has(#preview-alternate:not([hidden])) {
+    flex-wrap: wrap;
+  }
+
+  .preview-bottom:has(#preview-alternate:not([hidden])) .preview-actions {
+    margin-left: auto;
+  }
+}

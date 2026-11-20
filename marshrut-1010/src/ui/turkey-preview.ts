@@ -2,12 +2,13 @@ import chapter from '../../data/turkey-preview.json';
 import ru from '../../data/ru.json';
 import type { PreviewFrame } from '../render/preview';
 import {
-  advanceRun, checkSignal, createRun, loadCheckpoint, loadConnection, saveCheckpoint, shiftLane,
+  advanceRun, checkSignal, createRun, loadProgress, reachCheckpoint, saveProgress, shiftLane,
   type Checkpoint, type Cutscene, type PreviewTarget,
 } from '../story/turkey-preview';
 
 const words = ru.preview;
 const targets = ['ring', 'board', 'lamp'] as const;
+const lastBeat = { intro: chapter.intro.length - 1, outro: chapter.outro.length };
 
 export function createTurkeyPreview(root: HTMLElement, canvas: HTMLCanvasElement, refresh: () => void) {
   const panel = root.querySelector<HTMLElement>('#preview')!;
@@ -15,6 +16,7 @@ export function createTurkeyPreview(root: HTMLElement, canvas: HTMLCanvasElement
   const title = panel.querySelector<HTMLElement>('#preview-title')!;
   const speaker = panel.querySelector<HTMLElement>('#preview-speaker')!;
   const message = panel.querySelector<HTMLElement>('#preview-message')!;
+  const alternate = panel.querySelector<HTMLButtonElement>('#preview-alternate')!;
   const main = panel.querySelector<HTMLButtonElement>('#preview-main')!;
   const skip = panel.querySelector<HTMLButtonElement>('#preview-skip')!;
   const back = panel.querySelector<HTMLButtonElement>('#preview-back')!;
@@ -30,8 +32,13 @@ export function createTurkeyPreview(root: HTMLElement, canvas: HTMLCanvasElement
     });
     return [id, button];
   }));
-  const frame: PreviewFrame = { stage: loadCheckpoint(), line: 0, signaled: false, run: createRun() };
-  let connected = loadConnection(frame.stage);
+  let progress = loadProgress();
+  const frame: PreviewFrame = {
+    stage: progress.stage, line: 0, signaled: false, ledFamily: progress.ledFamily, run: createRun(), escortDistance: 0,
+  };
+  const detour = chapter.detour;
+  let walkingEscort = false;
+  let wrongRail = false;
   let active = false;
   let available = false;
   let selected: PreviewTarget | undefined;
@@ -60,37 +67,73 @@ export function createTurkeyPreview(root: HTMLElement, canvas: HTMLCanvasElement
     aim.hidden = !viewfinder || signaled;
     lanes.hidden = stage !== 'runner' || run.result !== 'running';
     main.hidden = !lanes.hidden;
+    alternate.hidden = true;
     main.disabled = viewfinder && !signaled && !selected;
     speaker.hidden = !cutscene;
     for (const [id, button] of buttons) button.setAttribute('aria-pressed', String(selected === id));
 
     if (cutscene) {
-      const beat = chapter[stage][line];
+      const beat = stage === 'intro' ? chapter.intro[line] : line === 0
+        ? (progress.ledFamily ? detour.helped : detour.continued)
+        : chapter.outro[line - 1];
       speaker.textContent = beat.speaker;
       message.textContent = beat.line;
-      main.textContent = line < chapter[stage].length - 1
-        ? words.next : stage === 'intro' ? words.aim : words.finish;
+      main.textContent = line < lastBeat[stage] ? words.next : stage === 'intro' ? words.aim : words.finish;
     } else if (viewfinder) {
       message.textContent = signaled ? words.signalOk : wrongTarget ? words.signalWrong : words.signalHint;
       main.textContent = signaled ? words.toRun : words.confirm;
     } else if (stage === 'runner' && run.result !== 'finish') {
       message.textContent = run.result === 'running' ? words.runGates[run.gate] : words.run[run.result];
       main.textContent = run.result === 'ready' ? words.runStart : words.retry;
+    } else if (stage === 'junction' || stage === 'escort') {
+      const beat = detour[stage];
+      speaker.textContent = beat.speaker;
+      speaker.hidden = walkingEscort || wrongRail;
+      message.textContent = walkingEscort ? detour.walking : wrongRail ? detour.wrongRail : beat.line;
+      main.hidden = alternate.hidden = walkingEscort;
+      main.textContent = stage === 'junction' ? words.detour : words.rails.blue;
+      alternate.textContent = stage === 'junction' ? words.continue : words.rails.red;
     } else {
-      message.textContent = words.summary;
+      message.textContent = progress.helped ? words.summaryHelped : words.summary;
       main.textContent = words.replay;
+      alternate.textContent = words.returnToJunction;
+      alternate.hidden = false;
     }
   }
 
-  function goTo(stage: Checkpoint) {
+  function record(stage: Checkpoint, ledFamily = false) {
+    progress = reachCheckpoint(progress, stage, ledFamily);
+    saveProgress(progress);
+  }
+
+  function goTo(stage: Checkpoint, ledFamily = false) {
+    record(stage, ledFamily);
     frame.stage = stage;
+    frame.ledFamily = progress.ledFamily;
     frame.line = 0;
     frame.signaled = false;
     frame.run = createRun();
     selected = undefined;
     wrongTarget = false;
-    saveCheckpoint(stage);
-    if (stage === 'outro') connected = true;
+    resetEscort();
+    display();
+    refresh();
+  }
+
+  function resetEscort() {
+    walkingEscort = false;
+    wrongRail = false;
+    frame.escortDistance = 0;
+  }
+
+  function chooseRail(rail: keyof typeof words.rails) {
+    if (walkingEscort) return;
+    if (rail === detour.safeRail) {
+      wrongRail = false;
+      walkingEscort = true;
+    } else {
+      wrongRail = true;
+    }
     display();
     refresh();
   }
@@ -117,6 +160,7 @@ export function createTurkeyPreview(root: HTMLElement, canvas: HTMLCanvasElement
     }
     frame.line = 0;
     frame.run = createRun();
+    resetEscort();
     selected = undefined;
     wrongTarget = false;
     cancelSwipe();
@@ -130,10 +174,15 @@ export function createTurkeyPreview(root: HTMLElement, canvas: HTMLCanvasElement
   skip.addEventListener('click', () => {
     if (frame.stage === 'intro' || frame.stage === 'outro') endCutscene(frame.stage);
   });
+  alternate.addEventListener('click', () => {
+    if (frame.stage === 'junction') goTo('outro');
+    else if (frame.stage === 'escort') chooseRail('red');
+    else if (frame.stage === 'complete') goTo('junction');
+  });
   main.addEventListener('click', () => {
     const { stage, signaled, run } = frame;
     if (stage === 'intro' || stage === 'outro') {
-      if (frame.line + 1 === chapter[stage].length) {
+      if (frame.line === lastBeat[stage]) {
         endCutscene(stage);
         return;
       }
@@ -145,7 +194,7 @@ export function createTurkeyPreview(root: HTMLElement, canvas: HTMLCanvasElement
       }
       if (checkSignal(selected)) {
         frame.signaled = true;
-        saveCheckpoint('runner');
+        record('runner');
       } else {
         wrongTarget = true;
       }
@@ -153,6 +202,12 @@ export function createTurkeyPreview(root: HTMLElement, canvas: HTMLCanvasElement
       if (run.result === 'running') return;
       frame.run = createRun();
       frame.run.result = 'running';
+    } else if (stage === 'junction') {
+      goTo('escort');
+      return;
+    } else if (stage === 'escort') {
+      chooseRail('blue');
+      return;
     } else {
       goTo('intro');
       return;
@@ -195,7 +250,8 @@ export function createTurkeyPreview(root: HTMLElement, canvas: HTMLCanvasElement
 
   return {
     frame,
-    get connected() { return connected; },
+    get connected() { return progress.connected; },
+    get helped() { return progress.helped; },
     get active() { return active; },
     setAvailable(value: boolean) {
       available = value;
@@ -203,13 +259,19 @@ export function createTurkeyPreview(root: HTMLElement, canvas: HTMLCanvasElement
     },
     cancelSwipe,
     update(dt: number) {
+      if (frame.stage === 'escort' && walkingEscort) {
+        frame.escortDistance = Math.min(detour.distance, frame.escortDistance + dt * detour.speed);
+        if (frame.escortDistance >= detour.distance) goTo('outro', true);
+        return walkingEscort;
+      }
       const { run } = frame;
       if (frame.stage !== 'runner' || run.result !== 'running') return;
       const gate = run.gate;
       const result = advanceRun(run, dt);
       if (result !== 'running') cancelSwipe();
-      if (result === 'finish') goTo('outro');
+      if (result === 'finish') goTo('junction');
       else if (result !== 'running' || gate !== run.gate) display();
+      return result === 'running';
     },
     placeTarget(id: PreviewTarget, x: number, y: number) {
       const button = buttons.get(id)!;

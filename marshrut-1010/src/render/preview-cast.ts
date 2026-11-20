@@ -17,16 +17,22 @@ function buildActor(model: Group) {
   return {
     root,
     hand,
-    pose(x: number, z: number, heading: number, speaking: boolean, presenting: boolean, dt: number, reset: boolean) {
+    pose(
+      x: number, z: number, heading: number, speaking: boolean, presenting: boolean,
+      dt: number, reset: boolean, onPath = false,
+    ) {
       const previousX = root.position.x;
+      const previousZ = root.position.z;
       const weight = reset ? 1 : -Math.expm1(-8 * dt);
       const desiredGesture = presenting ? 1 : speaking ? 0.45 : 0;
       gesture = MathUtils.lerp(gesture, desiredGesture, weight);
-      const dx = reset ? 0 : MathUtils.clamp(x - previousX, -tuning.walkSpeed * dt, tuning.walkSpeed * dt);
+      const dx = reset ? 0 : onPath ? x - previousX
+        : MathUtils.clamp(x - previousX, -tuning.walkSpeed * dt, tuning.walkSpeed * dt);
+      const dz = !reset && onPath ? z - previousZ : 0;
       root.position.set(reset ? x : previousX + dx, 0, z);
       root.rotation.y = heading;
       if (reset) walk.reset();
-      const step = walk(heading, dx, 0, dt);
+      const step = walk(heading, dx, dz, dt);
       model.position.y = step.offset;
       head.rotation.set(-0.06 * gesture, 0.16 * gesture, -0.075 * gesture);
       chest.rotation.y = 0.075 * gesture + step.armSwing * 0.04;
@@ -43,11 +49,12 @@ function buildActor(model: Group) {
 
 export async function loadPreviewCast() {
   const loader = new GLTFLoader();
-  const [courier, leila] = await Promise.all([
+  const [courier, leila, samir] = await Promise.all([
     loader.loadAsync(new URL('../assets/courier.glb', import.meta.url).href),
     loader.loadAsync(new URL('../assets/leila.glb', import.meta.url).href),
+    loader.loadAsync(new URL('../assets/samir.glb', import.meta.url).href),
   ]);
-  return { courier: buildActor(courier.scene), leila: buildActor(leila.scene) };
+  return { courier: buildActor(courier.scene), leila: buildActor(leila.scene), samir: buildActor(samir.scene) };
 }
 
 export type PreviewCast = Awaited<ReturnType<typeof loadPreviewCast>>;

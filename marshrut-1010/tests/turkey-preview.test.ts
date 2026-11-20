@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { advanceRun, checkSignal, createRun, shiftLane } from '../src/story/turkey-preview';
+import {
+  advanceRun, checkSignal, createRun, loadProgress, reachCheckpoint, saveProgress, shiftLane,
+} from '../src/story/turkey-preview';
 
 function startRun() {
   const run = createRun();
@@ -57,5 +59,41 @@ describe('Turkey scene preview', () => {
     shiftLane(retry, 1);
     shiftLane(retry, 1);
     expect(advanceRun(retry, 4)).toBe('finish');
+  });
+});
+
+describe('Turkey checkpoint and detour', () => {
+  function createStorage(initial: Record<string, string> = {}) {
+    const values = new Map(Object.entries(initial));
+    return {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+    };
+  }
+
+  it('loads completed saves and earned connection from the previous version', () => {
+    expect(loadProgress(createStorage({ 'route-1010:turkey-preview:v1': 'complete' })))
+      .toEqual({ stage: 'complete', connected: true, helped: false, ledFamily: false });
+    expect(loadProgress(createStorage({
+      'route-1010:turkey-preview:v1': 'runner',
+      'route-1010:turkey-connection:v1': 'earned',
+    }))).toEqual({ stage: 'runner', connected: true, helped: false, ledFamily: false });
+  });
+
+  it('awards help after the escort and retains both marks during a replay', () => {
+    const store = createStorage();
+    const junction = reachCheckpoint(loadProgress(store), 'junction');
+    expect(junction).toMatchObject({ connected: true, helped: false });
+    const escort = reachCheckpoint(junction, 'escort');
+    saveProgress(escort, store);
+    expect(loadProgress(store)).toEqual(escort);
+
+    const helped = reachCheckpoint(escort, 'outro', true);
+    const ending = reachCheckpoint(helped, 'complete');
+    saveProgress(ending, store);
+    expect(loadProgress(store)).toEqual({ stage: 'complete', connected: true, helped: true, ledFamily: true });
+
+    const skipped = reachCheckpoint(reachCheckpoint(ending, 'junction'), 'outro');
+    expect(skipped).toMatchObject({ connected: true, helped: true, ledFamily: false });
   });
 });

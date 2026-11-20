@@ -116,10 +116,7 @@ export async function showHarbor(canvas: HTMLCanvasElement, stick: HTMLElement, 
   function drawHarbor(dt: number, now: number) {
     pier.visible = true;
     mark.root.visible = true;
-    if (previewView) {
-      previewView.sets.drama.visible = false;
-      previewView.sets.running.visible = false;
-    }
+    if (previewView) previewView.root.visible = false;
     const { pointer, sideways } = controls.movement;
     const walking = pointer !== null;
     const { x, z } = walker;
@@ -137,17 +134,17 @@ export async function showHarbor(canvas: HTMLCanvasElement, stick: HTMLElement, 
   function drawPreview(dt: number) {
     if (!previewView) {
       previewView = createPreviewView(mark, cast, preview.placeTarget);
-      scene.add(previewView.sets.drama, previewView.sets.running);
+      scene.add(previewView.root);
     }
     if (previewView.camera.aspect !== follow.camera.aspect) {
       previewView.camera.aspect = follow.camera.aspect;
       previewView.camera.updateProjectionMatrix();
     }
     pier.visible = false;
-    preview.update(dt);
+    const advancing = preview.update(dt);
     const moving = previewView.update(preview.frame, dt, motion.matches);
     renderer.render(scene, previewView.camera);
-    return moving;
+    return moving || advancing;
   }
 
   canvas.addEventListener('webglcontextlost', (event) => {
