@@ -53,7 +53,11 @@ function createFoot(hip: Bone, knee: Bone, ankle: Bone, side: number) {
   };
 }
 
-export function createMarkGait(root: Group, legs: { hip: Bone; knee: Bone; ankle: Bone; side: number }[]) {
+export function createMarkGait(
+  root: Group,
+  legs: { hip: Bone; knee: Bone; ankle: Bone; side: number }[],
+  surface = (x: number, z: number): number | undefined => floorHeight(x, z) || undefined,
+) {
   const feet = legs.map(({ hip, knee, ankle, side }) => createFoot(hip, knee, ankle, side));
   const target = new Vector3();
   const takeoff = new Vector3();
@@ -87,11 +91,11 @@ export function createMarkGait(root: Group, legs: { hip: Bone; knee: Bone; ankle
       px += cos * correction;
       pz -= sin * correction;
     }
-    const floor = floorHeight(px, pz);
-    return floor ? target.set(px, floor + foot.ankleHeight, pz) : target.set(x, y + foot.ankleHeight, z);
+    const floor = surface(px, pz);
+    return floor !== undefined ? target.set(px, floor + foot.ankleHeight, pz) : target.set(x, y + foot.ankleHeight, z);
   }
 
-  return function step(heading: number, dx: number, dz: number, dt: number) {
+  function step(heading: number, dx: number, dz: number, dt: number, running = false) {
     const { x, y, z } = root.position;
     const cos = Math.cos(heading);
     const sin = Math.sin(heading);
@@ -116,6 +120,7 @@ export function createMarkGait(root: Group, legs: { hip: Bone; knee: Bone; ankle
       initialized = true;
     }
 
+    const leadSeconds = running ? settings.runLeadSeconds : settings.stepLeadSeconds;
     if (swing < 0) {
       if (!moving) {
         // Finish a stop or pivot with the feet under the hips.
@@ -136,14 +141,18 @@ export function createMarkGait(root: Group, legs: { hip: Bone; knee: Bone; ankle
         takeoff.copy(feet[swing].position);
         takeoffYaw = feet[swing].yaw;
         elapsed = 0;
-        duration = moving
-          ? settings.stepSeconds + (settings.strafeStepSeconds - settings.stepSeconds) * lateral
-          : settings.settleStepSeconds;
-        stepHeight = moving
-          ? settings.stepHeight + (settings.strafeStepHeight - settings.stepHeight) * lateral
-          : settings.strafeStepHeight * 0.7;
+        if (running) {
+          duration = settings.runStepSeconds;
+          stepHeight = settings.runStepHeight;
+        } else if (moving) {
+          duration = settings.stepSeconds + (settings.strafeStepSeconds - settings.stepSeconds) * lateral;
+          stepHeight = settings.stepHeight + (settings.strafeStepHeight - settings.stepHeight) * lateral;
+        } else {
+          duration = settings.settleStepSeconds;
+          stepHeight = settings.strafeStepHeight * 0.7;
+        }
         toeLift = moving ? 0.19 * (1 - lateral) : 0;
-        const lead = duration + settings.stepLeadSeconds;
+        const lead = duration + leadSeconds;
         landing.copy(placeFoot(swing, cos, sin, vx * lead, vz * lead, lateral > 0.6));
         landingYaw = heading;
       }
@@ -158,11 +167,11 @@ export function createMarkGait(root: Group, legs: { hip: Bone; knee: Bone; ankle
       const progress = phase * phase * (3 - 2 * phase);
       const arch = Math.sin(Math.PI * phase);
       lift = arch * stepHeight;
-      const lead = Math.max(0, duration - elapsed) + settings.stepLeadSeconds;
+      const lead = Math.max(0, duration - elapsed) + leadSeconds;
       const adjust = 1 - Math.min(1, Math.max(0, (phase - 0.5) / 0.38));
       const weight = -Math.expm1(-28 * dt) * adjust;
       landing.lerp(placeFoot(swing, cos, sin, vx * lead, vz * lead, lateral > 0.6), weight);
-      landing.y = (floorHeight(landing.x, landing.z) || y) + foot.ankleHeight;
+      landing.y = (surface(landing.x, landing.z) ?? y) + foot.ankleHeight;
       landingYaw += angleDelta(heading - landingYaw) * weight;
       foot.position.copy(takeoff).lerp(landing, progress);
       foot.position.y += lift;
@@ -199,5 +208,14 @@ export function createMarkGait(root: Group, legs: { hip: Bone; knee: Bone; ankle
     pose.sideways = sideways;
     pose.active = swing >= 0 || moving || turning > 0.001 || Math.abs(goal - bodyHeight) > 0.001;
     return pose;
-  };
+  }
+  return Object.assign(step, {
+    reset() {
+      initialized = false;
+      next = 0;
+      swing = -1;
+      effort = armSwing = sideways = 0;
+      for (const foot of feet) foot.pitch = 0;
+    },
+  });
 }

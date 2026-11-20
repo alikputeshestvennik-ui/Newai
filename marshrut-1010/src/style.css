@@ -205,3 +205,116 @@ h1 {
   margin: 0.65rem 0;
   font-size: 0.9rem;
 }
+
+#start-preview {
+  position: fixed;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1.2rem, env(safe-area-inset-bottom));
+  background: #f0d8a7;
+  color: #153a34;
+}
+
+.playing-preview :is(.title, .controls, #open-ticket, #pick-up-ticket) {
+  display: none;
+}
+
+#preview {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.preview-top,
+.preview-bottom {
+  position: absolute;
+  left: max(1rem, env(safe-area-inset-left));
+  right: max(1rem, env(safe-area-inset-right));
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.preview-top {
+  top: max(0.7rem, env(safe-area-inset-top));
+  align-items: center;
+}
+
+.preview-top h2 {
+  margin: 0;
+  padding: 0.48rem 0.7rem;
+  border-radius: 0.45rem;
+  background: #102e2af2;
+  font: 500 clamp(1rem, 4.5vmin, 1.4rem) Georgia, serif;
+}
+
+.preview-bottom {
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.preview-caption {
+  max-width: 36rem;
+  border-radius: 0.45rem;
+  padding: 0.58rem 0.8rem;
+  background: #102e2af2;
+  font-size: clamp(0.82rem, 4vmin, 1.04rem);
+  line-height: 1.25;
+}
+
+.preview-caption p {
+  margin: 0;
+}
+
+.preview-caption strong {
+  display: block;
+  margin-bottom: 0.26rem;
+  color: #f4ca8c;
+  font-size: 0.78rem;
+}
+
+.preview-caption strong[hidden] {
+  display: none;
+}
+
+.preview-buttons:not([hidden]) {
+  display: flex;
+  gap: 0.42rem;
+}
+
+#preview button {
+  pointer-events: auto;
+}
+
+.preview-target {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  max-width: 25vw;
+  padding: 0.35rem 0.6rem;
+  font-size: clamp(0.7rem, 3.4vmin, 0.87rem);
+}
+
+.preview-target[aria-pressed=true],
+.preview-primary {
+  background: #f0d8a7;
+  color: #153a34;
+}
+
+.preview-primary {
+  flex-shrink: 0;
+}
+
+.preview-primary:disabled {
+  opacity: 0.62;
+}
+
+.preview-primary:not(:disabled):active,
+.preview-target[aria-pressed=true]:active {
+  background: #e1c181;
+}
+
+.run-arrow {
+  width: clamp(3rem, 14vmin, 4.5rem);
+  height: clamp(3rem, 14vmin, 4.5rem);
+  font-size: 1.55rem;
+  padding: 0;
+}

@@ -2,6 +2,7 @@ import ru from '../data/ru.json';
 import { loadTicketProgress, saveTicketProgress, type TicketState } from './harbor/ticket';
 import { showHarbor, type HarborStats } from './render/scene';
 import { paintTicket } from './render/ticket';
+import { createTurkeyPreview } from './ui/turkey-preview';
 import './style.css';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#harbor')!;
@@ -16,6 +17,10 @@ const symbol = document.querySelector<HTMLCanvasElement>('#ticket-symbol')!;
 const words = ru.ticket;
 let ticket: TicketState = { progress: loadTicketProgress(), nearTicket: false, wrongSign: undefined };
 let harbor: Awaited<ReturnType<typeof showHarbor>> | undefined;
+const preview = createTurkeyPreview(document.querySelector('#game')!, canvas, () => {
+  stats.hidden = true;
+  harbor?.refreshPreview();
+});
 
 document.querySelector('#title')!.textContent = ru.title;
 document.querySelector('#place')!.textContent = ru.place;
@@ -37,6 +42,7 @@ function displayObjective() {
   objective.classList.toggle('objective-complete', ticket.progress === 'complete');
   pickUp.hidden = !ticket.nearTicket;
   open.hidden = ticket.progress === 'find';
+  preview.setAvailable(ticket.progress === 'complete');
 }
 
 function openTicket() {
@@ -65,6 +71,7 @@ function updateStats({ fps, calls, triangles }: HarborStats) {
 
 void showHarbor(canvas, stick, {
   ticketProgress: ticket.progress,
+  preview,
   onTicketChange(next) {
     if (next.progress !== ticket.progress) saveTicketProgress(next.progress);
     ticket = next;

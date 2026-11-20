@@ -55,25 +55,37 @@ export function buildMark(model: Group) {
   root.add(shadow);
 
   const step = createMarkGait(root, limbs);
+  const previewStep = createMarkGait(root, limbs, () => 0);
   let breathing = 0;
+
+  function poseWith(
+    { offset, armSwing, effort, sideways, active }: ReturnType<typeof step>,
+    heading: number, dt: number, reducedMotion: boolean, running: boolean,
+  ) {
+    breathing = (breathing + dt * 2.1) % (2 * Math.PI);
+    const breath = reducedMotion ? 0 : Math.sin(breathing) * (1 - effort);
+    figure.rotation.y = heading;
+    figure.position.y = offset;
+    waist.rotation.y = -armSwing * 0.035;
+    chest.rotation.set((running ? 0.15 : 0.055) * effort + 0.008 * breath, armSwing * 0.065, -0.07 * sideways * effort);
+    head.rotation.set(-chest.rotation.x * 0.7, -chest.rotation.y * 0.55, -chest.rotation.z * 0.75);
+
+    for (const { shoulder, elbow, side } of limbs) {
+      const swing = armSwing * side;
+      shoulder.rotation.x = swing * (running ? 0.36 : 0.24) - 0.04 * effort;
+      elbow.rotation.x = (running ? 0.98 : 0.55) - (0.08 * effort + Math.max(0, -swing) * 0.16);
+    }
+    return active;
+  }
+
   return {
     root,
     pose(heading: number, dx: number, dz: number, dt: number, reducedMotion: boolean) {
-      const { offset, armSwing, effort, sideways, active } = step(heading, dx, dz, dt);
-      breathing = (breathing + dt * 2.1) % (2 * Math.PI);
-      const breath = reducedMotion ? 0 : Math.sin(breathing) * (1 - effort);
-      figure.rotation.y = heading;
-      figure.position.y = offset;
-      waist.rotation.y = -armSwing * 0.035;
-      chest.rotation.set(0.055 * effort + 0.008 * breath, armSwing * 0.065, -0.07 * sideways * effort);
-      head.rotation.set(-chest.rotation.x * 0.7, -chest.rotation.y * 0.55, -chest.rotation.z * 0.75);
-
-      for (const { shoulder, elbow, side } of limbs) {
-        const swing = armSwing * side;
-        shoulder.rotation.x = swing * 0.24 - 0.04 * effort;
-        elbow.rotation.x = 0.55 - (0.08 * effort + Math.max(0, -swing) * 0.16);
-      }
-      return active;
+      return poseWith(step(heading, dx, dz, dt), heading, dt, reducedMotion, false);
+    },
+    posePreview(heading: number, dx: number, dz: number, dt: number, reducedMotion: boolean, running: boolean, reset: boolean) {
+      if (reset) previewStep.reset();
+      return poseWith(previewStep(heading, dx, dz, dt, running), heading, dt, reducedMotion, running);
     },
   };
 }

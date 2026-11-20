@@ -7,6 +7,7 @@ export function bindHarborControls(
   moveStick: HTMLElement,
   wake: () => void,
   onLook: (dx: number, dy: number, walking: boolean) => void,
+  enabled: () => boolean,
 ) {
   const movement = { pointer: null as number | null, centerX: 0, radius: 1, sideways: 0 };
   const look = { pointer: null as number | null, x: 0, y: 0, dx: 0, dy: 0, scale: 1 };
@@ -39,7 +40,7 @@ export function bindHarborControls(
   }
 
   canvas.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) return;
+    if (!enabled() || event.button !== 0) return;
     const bounds = canvas.getBoundingClientRect();
     if (event.clientX < bounds.left + bounds.width / 2) {
       if (movement.pointer !== null) return;

@@ -17,6 +17,32 @@
       <div id="move-stick" role="img" hidden><span aria-hidden="true"></span></div>
       <button id="open-ticket" class="harbor-action" type="button" hidden></button>
       <button id="pick-up-ticket" class="harbor-action" type="button" hidden></button>
+      <button id="start-preview" class="harbor-action" type="button" hidden></button>
+      <section id="preview" aria-labelledby="preview-title" hidden>
+        <div class="preview-top">
+          <h2 id="preview-title"></h2>
+          <div class="preview-buttons">
+            <button id="preview-skip" class="harbor-action" type="button" hidden></button>
+            <button id="preview-back" class="harbor-action" type="button"></button>
+          </div>
+        </div>
+        <div id="preview-targets" hidden>
+          <button class="harbor-action preview-target" data-target="ring" type="button"></button>
+          <button class="harbor-action preview-target" data-target="board" type="button"></button>
+          <button class="harbor-action preview-target" data-target="lamp" type="button"></button>
+        </div>
+        <div class="preview-bottom">
+          <div class="preview-caption" aria-live="polite">
+            <strong id="preview-speaker" hidden></strong>
+            <p id="preview-message"></p>
+          </div>
+          <div id="run-controls" class="preview-buttons" hidden>
+            <button id="run-left" class="harbor-action run-arrow" type="button">←</button>
+            <button id="run-right" class="harbor-action run-arrow" type="button">→</button>
+          </div>
+          <button id="preview-main" class="harbor-action preview-primary" type="button"></button>
+        </div>
+      </section>
       <div class="controls">
         <p id="objective" role="status" hidden></p>
         <p id="status" role="status"></p>

@@ -7,6 +7,8 @@ import { createWalker, steerWalker, updateWalker } from '../player/movement';
 import { createFollowCamera } from './follow-camera';
 import { loadMark } from './mark';
 import { buildPier } from './pier';
+import { createPreviewView } from './preview';
+import type { createTurkeyPreview } from '../ui/turkey-preview';
 import { buildTicket } from './ticket';
 
 export interface HarborStats {
@@ -17,6 +19,7 @@ export interface HarborStats {
 
 interface HarborOptions {
   ticketProgress: TicketProgress;
+  preview: ReturnType<typeof createTurkeyPreview>;
   onTicketChange: (state: TicketState) => void;
   onReady: () => void;
   onContextLost: () => void;
@@ -24,7 +27,7 @@ interface HarborOptions {
 }
 
 export async function showHarbor(canvas: HTMLCanvasElement, stick: HTMLElement, options: HarborOptions) {
-  const { ticketProgress, onTicketChange, onReady, onContextLost, onStats } = options;
+  const { ticketProgress, onTicketChange, onReady, onContextLost, onStats, preview } = options;
   const mark = await loadMark();
   const renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
   const scene = new Scene();
@@ -49,7 +52,8 @@ export async function showHarbor(canvas: HTMLCanvasElement, stick: HTMLElement, 
     } else {
       follow.look(dx, dy);
     }
-  });
+  }, () => !preview.active);
+  let previewView: ReturnType<typeof createPreviewView> | undefined;
 
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
   let frameId = 0;
@@ -69,6 +73,7 @@ export async function showHarbor(canvas: HTMLCanvasElement, stick: HTMLElement, 
   function resize() {
     needsResize = true;
     controls.reset();
+    preview.cancelSwipe();
     schedule();
   }
 
@@ -86,17 +91,7 @@ export async function showHarbor(canvas: HTMLCanvasElement, stick: HTMLElement, 
 
     const dt = lastFrame ? Math.min((now - lastFrame) / 1000, 0.1) : 0;
     lastFrame = now;
-    const { pointer, sideways } = controls.movement;
-    const walking = pointer !== null;
-    const { x, z } = walker;
-    updateWalker(walker, walking, sideways, dt, motion.matches);
-    if (ticketQuest.update(x, z, walker)) onTicketChange(ticketQuest.state);
-    mark.root.position.set(walker.x, walker.y, walker.z);
-    const posing = mark.pose(walker.heading, walker.x - x, walker.z - z, dt, motion.matches);
-    const cameraMoving = follow.follow(walker.x, walker.y, walker.z, walker.heading, walking, dt);
-    boats[0].position.y = motion.matches ? 0 : Math.sin(now / 1150) * 0.054;
-    boats[1].position.y = motion.matches ? 0 : Math.sin(now / 1090 + 1.5) * 0.07;
-    renderer.render(scene, follow.camera);
+    const moving = preview.active ? drawPreview(dt) : drawHarbor(dt, now);
     if (!ready) {
       ready = true;
       onReady();
@@ -113,8 +108,45 @@ export async function showHarbor(canvas: HTMLCanvasElement, stick: HTMLElement, 
         frames = 1;
       }
     }
-    if (!motion.matches || walking || posing || cameraMoving || onStats) schedule();
+    if (moving || onStats || (!preview.active && !motion.matches)) schedule();
     else lastFrame = 0;
+  }
+
+  function drawHarbor(dt: number, now: number) {
+    pier.visible = true;
+    mark.root.visible = true;
+    if (previewView) {
+      previewView.sets.drama.visible = false;
+      previewView.sets.running.visible = false;
+    }
+    const { pointer, sideways } = controls.movement;
+    const walking = pointer !== null;
+    const { x, z } = walker;
+    updateWalker(walker, walking, sideways, dt, motion.matches);
+    if (ticketQuest.update(x, z, walker)) onTicketChange(ticketQuest.state);
+    mark.root.position.set(walker.x, walker.y, walker.z);
+    const posing = mark.pose(walker.heading, walker.x - x, walker.z - z, dt, motion.matches);
+    const cameraMoving = follow.follow(walker.x, walker.y, walker.z, walker.heading, walking, dt);
+    boats[0].position.y = motion.matches ? 0 : Math.sin(now / 1150) * 0.054;
+    boats[1].position.y = motion.matches ? 0 : Math.sin(now / 1090 + 1.5) * 0.07;
+    renderer.render(scene, follow.camera);
+    return walking || posing || cameraMoving;
+  }
+
+  function drawPreview(dt: number) {
+    if (!previewView) {
+      previewView = createPreviewView(mark, preview.placeTarget);
+      scene.add(previewView.sets.drama, previewView.sets.running);
+    }
+    if (previewView.camera.aspect !== follow.camera.aspect) {
+      previewView.camera.aspect = follow.camera.aspect;
+      previewView.camera.updateProjectionMatrix();
+    }
+    pier.visible = false;
+    preview.update(dt);
+    const moving = previewView.update(preview.frame, dt, motion.matches);
+    renderer.render(scene, previewView.camera);
+    return moving;
   }
 
   canvas.addEventListener('webglcontextlost', (event) => {
@@ -125,6 +157,7 @@ export async function showHarbor(canvas: HTMLCanvasElement, stick: HTMLElement, 
     frameId = 0;
     lastFrame = 0;
     controls.reset();
+    preview.cancelSwipe();
     onContextLost();
   });
 
@@ -143,6 +176,7 @@ export async function showHarbor(canvas: HTMLCanvasElement, stick: HTMLElement, 
       cancelAnimationFrame(frameId);
       frameId = 0;
       controls.reset();
+      preview.cancelSwipe();
     } else {
       resize();
     }
@@ -150,6 +184,18 @@ export async function showHarbor(canvas: HTMLCanvasElement, stick: HTMLElement, 
   schedule();
 
   return {
+    refreshPreview() {
+      if (!preview.active) previewView?.reset();
+      preview.cancelSwipe();
+      controls.reset();
+      walker.forward = 0;
+      walker.sideways = 0;
+      walker.targetHeading = walker.heading;
+      sampleStart = 0;
+      frames = 0;
+      lastFrame = 0;
+      schedule();
+    },
     pickUpTicket() {
       if (!ready || !ticketQuest.pickUp()) return false;
       ticket.visible = false;

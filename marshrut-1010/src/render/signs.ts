@@ -62,6 +62,10 @@ function makeFace(shape: string) {
   return texture;
 }
 
+export function buildSignPlate(shape: string, width: number, height: number) {
+  return new Mesh(new PlaneGeometry(width, height), new MeshBasicMaterial({ map: makeFace(shape), side: DoubleSide }));
+}
+
 export function buildSigns() {
   const group = new Group();
   const plate = new PlaneGeometry(signFace.width, signFace.height);

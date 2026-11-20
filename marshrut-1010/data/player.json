@@ -10,6 +10,9 @@
   "strafeExit": 0.33,
   "gait": {
     "stepSeconds": 0.38,
+    "runStepSeconds": 0.22,
+    "runStepHeight": 0.17,
+    "runLeadSeconds": 0.085,
     "strafeStepSeconds": 0.40,
     "settleStepSeconds": 0.22,
     "stepLeadSeconds": 0.16,
