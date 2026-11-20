@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 
 const ru = JSON.parse(readFileSync(new URL('../../data/ru.json', import.meta.url), 'utf8'));
 
-test('renders the bundled harbor and resizes it when the phone rotates', async ({ page }, testInfo) => {
+test('renders the bundled harbor only in landscape', async ({ page }, testInfo) => {
   const externalRequests: string[] = [];
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -17,7 +17,15 @@ test('renders the bundled harbor and resizes it when the phone rotates', async (
     }
   });
 
+  const canvas = page.locator('#harbor');
+  const rotateHint = page.getByText(ru.rotateHint, { exact: true });
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/?stats');
+  await expect(rotateHint).toBeVisible();
+  await expect(canvas).toBeHidden();
+
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect(rotateHint).toBeHidden();
   await expect(page.getByRole('heading', { name: ru.title })).toBeVisible();
   await expect(page.getByText(ru.ready, { exact: true })).toBeVisible();
 
@@ -32,16 +40,15 @@ test('renders the bundled harbor and resizes it when the phone rotates', async (
   expect(triangles).toBeLessThanOrEqual(200_000);
   console.log(summary);
 
-  const canvas = page.locator('#harbor');
-  await expect(canvas).toHaveAttribute('width', '585');
-  await expect(canvas).toHaveAttribute('height', '1266');
-  await page.screenshot({ path: testInfo.outputPath('portrait.png') });
-
-  await page.setViewportSize({ width: 844, height: 390 });
   await expect(canvas).toHaveAttribute('width', '1266');
   await expect(canvas).toHaveAttribute('height', '585');
-  await expect(page.getByText(ru.ready, { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('landscape.png') });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(rotateHint).toBeVisible();
+  await expect(canvas).toBeHidden();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect(page.getByText(ru.ready, { exact: true })).toBeVisible();
   expect(externalRequests).toEqual([]);
   expect(errors).toEqual([]);
 });
@@ -53,7 +60,7 @@ test('camera turns with the swipe and stays still while the finger holds that sp
   const canvas = page.locator('#harbor');
   const touch = await page.context().newCDPSession(page);
   const start = await canvas.screenshot();
-  const finger = { x: 305, y: 400, id: 1 };
+  const finger = { x: 640, y: 200, id: 1 };
   await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [finger] });
   expect((await canvas.screenshot()).equals(start)).toBe(true);
 
@@ -87,8 +94,8 @@ test('walks on hold, steps sideways, and steers with a second finger', async ({ 
   const session = await page.context().newCDPSession(page);
   await expect(page.getByText(ru.ready, { exact: true })).toBeVisible();
   await expect(stick).toBeHidden();
-  const move = { x: 105, y: 640, id: 0 };
-  const look = { x: 290, y: 400, id: 1 };
+  const move = { x: 200, y: 285, id: 0 };
+  const look = { x: 615, y: 200, id: 1 };
 
   const beforeWalk = await canvas.screenshot();
   await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [move] });

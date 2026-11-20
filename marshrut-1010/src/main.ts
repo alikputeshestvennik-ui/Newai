@@ -9,6 +9,7 @@ const stick = document.querySelector<HTMLElement>('#move-stick')!;
 
 document.querySelector('#title')!.textContent = ru.title;
 document.querySelector('#place')!.textContent = ru.place;
+document.querySelector('#rotate-hint')!.textContent = ru.rotateHint;
 status.textContent = ru.loading;
 stick.setAttribute('aria-label', ru.moveStick);
 const showStats = new URLSearchParams(location.search).has('stats');

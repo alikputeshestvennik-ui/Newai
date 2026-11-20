@@ -9,7 +9,7 @@ export default defineConfig({
       executablePath: process.env.ROUTE_CHROME,
       args: ['--enable-unsafe-swiftshader'],
     },
-    viewport: { width: 390, height: 844 },
+    viewport: { width: 844, height: 390 },
     deviceScaleFactor: 2,
     isMobile: true,
     hasTouch: true,

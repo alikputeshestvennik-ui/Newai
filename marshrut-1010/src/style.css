@@ -10,6 +10,26 @@ body {
   overscroll-behavior: none;
 }
 
+#rotate-hint {
+  display: none;
+}
+
+@media (orientation: portrait) {
+  #game {
+    display: none;
+  }
+
+  #rotate-hint {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    margin: 0;
+    padding: 1.5rem;
+    text-align: center;
+  }
+}
+
 #harbor {
   position: fixed;
   inset: 0;

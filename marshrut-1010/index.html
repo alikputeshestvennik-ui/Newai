@@ -8,15 +8,18 @@
     <script type="module" src="/src/main.ts"></script>
   </head>
   <body>
-    <canvas id="harbor" aria-hidden="true"></canvas>
-    <header class="title">
-      <p id="place"></p>
-      <h1 id="title"></h1>
-    </header>
-    <div id="move-stick" role="img" hidden><span aria-hidden="true"></span></div>
-    <div class="controls">
-      <p id="status" role="status"></p>
-    </div>
-    <output id="stats" hidden></output>
+    <main id="game">
+      <canvas id="harbor" aria-hidden="true"></canvas>
+      <header class="title">
+        <p id="place"></p>
+        <h1 id="title"></h1>
+      </header>
+      <div id="move-stick" role="img" hidden><span aria-hidden="true"></span></div>
+      <div class="controls">
+        <p id="status" role="status"></p>
+      </div>
+      <output id="stats" hidden></output>
+    </main>
+    <p id="rotate-hint"></p>
   </body>
 </html>

@@ -12,11 +12,8 @@ trap 'adb logcat -d -s AndroidRuntime chromium Capacitor > "$results/logcat.txt"
 
 expect_scene() {
   local label="$1"
-  local rotation="$2"
   local view=/sdcard/route-window.xml
-  local expected_rotation=0
   local close_x close_y
-  if [[ "$rotation" == landscape ]]; then expected_rotation=1; fi
   for attempt in {1..12}; do
     adb shell uiautomator dump "$view" >/dev/null 2>&1 || continue
     adb exec-out cat "$view" > "$results/$label.xml"
@@ -35,16 +32,16 @@ PY
       adb shell input tap "$close_x" "$close_y"
     fi
     if grep -Fq "$ready" "$results/$label.xml" &&
-       grep -q "<hierarchy rotation=\"$expected_rotation\"" "$results/$label.xml"; then
+       grep -Eq '<hierarchy rotation="[13]"' "$results/$label.xml"; then
       adb exec-out screencap -p > "$results/$label.png"
-      python3 - "$results/$label.png" "$rotation" <<'PY'
+      python3 - "$results/$label.png" <<'PY'
 import struct
 import sys
 from pathlib import Path
 
 width, height = struct.unpack_from('>II', Path(sys.argv[1]).read_bytes(), 16)
-assert (width > height) == (sys.argv[2] == 'landscape'), (width, height, sys.argv[2])
-print(f'3D scene rendered offline in {sys.argv[2]} at {width}×{height}')
+assert width > height, (width, height)
+print(f'3D scene rendered offline in landscape at {width}×{height}')
 PY
       return
     fi
@@ -67,11 +64,13 @@ adb shell settings put secure immersive_mode_confirmations confirmed
 adb shell cmd window user-rotation lock 0
 adb shell am force-stop "$app"
 adb shell am start -W -n "$activity"
-expect_scene cold-start portrait
+expect_scene cold-start
 
 adb shell cmd window user-rotation lock 1
-expect_scene rotation landscape
+expect_scene system-landscape
+adb shell cmd window user-rotation lock 0
+expect_scene system-portrait
 
 adb shell input keyevent KEYCODE_HOME
 adb shell am start -W -n "$activity"
-expect_scene resume landscape
+expect_scene resume
