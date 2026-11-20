@@ -1,11 +1,28 @@
 {
-  "walkSpeed": 2.9,
+  "walkSpeed": 1.62,
+  "strafeSpeed": 1.12,
+  "startResponse": 19,
+  "stopResponse": 32,
+  "directionResponse": 17,
+  "turnResponse": 25,
   "radius": 0.24,
-  "strafeThreshold": 0.48,
+  "strafeEnter": 0.55,
+  "strafeExit": 0.33,
+  "gait": {
+    "stepSeconds": 0.38,
+    "strafeStepSeconds": 0.40,
+    "settleStepSeconds": 0.22,
+    "stepLeadSeconds": 0.16,
+    "stepHeight": 0.105,
+    "strafeStepHeight": 0.075,
+    "stanceWidth": 0.27,
+    "hipDrop": 0.063
+  },
   "camera": {
     "walkYaw": 0,
     "walkPitch": 0.42,
-    "lookRadiansPerPixel": 0.009,
+    "lookRadiansPerPixel": 0.008,
+    "lookReferenceHeight": 390,
     "minPitch": 0.22,
     "maxPitch": 1.02
   }

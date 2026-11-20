@@ -118,7 +118,10 @@ test('walks on hold, steps sideways, and steers with a second finger', async ({ 
   move.x -= 22;
   await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move] });
   await expect(stick.locator('span')).not.toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
-  move.x += 22;
+  move.x += 11;
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move] });
+  await expect(stick.locator('span')).not.toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+  move.x += 11;
   await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [move] });
   await expect(stick.locator('span')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
 

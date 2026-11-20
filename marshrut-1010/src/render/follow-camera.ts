@@ -72,11 +72,6 @@ export function createFollowCamera() {
 
   return {
     camera,
-    alignBehind(heading: number) {
-      targetYaw = (heading + Math.PI) % turn;
-      targetPitch = settings.walkPitch;
-      lookingAround = false;
-    },
     look(dx: number, dy: number) {
       if (!dx && !dy) return;
       // Take over from the visible angle if a swipe begins during the return to walking view.
@@ -90,15 +85,24 @@ export function createFollowCamera() {
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
     },
-    follow(x: number, y: number, z: number, seconds: number) {
+    follow(x: number, y: number, z: number, heading: number, walking: boolean, seconds: number) {
       const dt = Math.min(seconds, 0.1);
       const turnWeight = initialized ? 1 - Math.exp(-8 * dt) : 1;
       const liftWeight = initialized ? 1 - Math.exp(-12 * dt) : 1;
+      if (walking || !lookingAround) {
+        const behind = (heading + Math.PI) % turn;
+        // Carry the camera with each turn while its orbit offset eases back after free look.
+        if (!lookingAround) yaw = (yaw + behind - targetYaw) % turn;
+        targetYaw = behind;
+        targetPitch = settings.walkPitch;
+        lookingAround = false;
+      }
       const yawDelta = Math.atan2(Math.sin(targetYaw - yaw), Math.cos(targetYaw - yaw));
       yaw = (yaw + yawDelta * (Math.abs(yawDelta) < tolerance ? 1 : turnWeight)) % turn;
       pitch = approach(pitch, targetPitch, turnWeight);
 
-      target.set(x, y + 1.25, z);
+      const targetHeight = y + 1.25;
+      target.set(x, approach(target.y, targetHeight, liftWeight), z);
       const range = followCameraDistance(camera.aspect);
       let viewYaw = yaw;
       let viewPitch = clearPitch(range);
@@ -125,6 +129,7 @@ export function createFollowCamera() {
       initialized = true;
       return Math.abs(Math.sin((targetYaw - yaw) / 2)) > tolerance / 4
         || Math.abs(targetPitch - pitch) > tolerance / 2
+        || Math.abs(targetHeight - target.y) > tolerance / 2
         || Math.abs(viewPitch - pitch - lift) > tolerance / 2
         || Math.abs(viewDistance - cameraDistance) > tolerance / 2;
     },

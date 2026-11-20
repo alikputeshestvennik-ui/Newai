@@ -2,7 +2,7 @@ import {
   Color, DirectionalLight, HemisphereLight, Scene, WebGLRenderer,
 } from 'three';
 import { bindHarborControls } from '../player/controls';
-import { createWalker, steerWalker, walk } from '../player/movement';
+import { createWalker, steerWalker, updateWalker } from '../player/movement';
 import { createFollowCamera } from './follow-camera';
 import { loadMark } from './mark';
 import { buildPier } from './pier';
@@ -37,7 +37,6 @@ export async function showHarbor(
   const controls = bindHarborControls(canvas, stick, schedule, (dx, dy, walking) => {
     if (walking) {
       steerWalker(walker, dx);
-      follow.alignBehind(walker.heading);
     } else {
       follow.look(dx, dy);
     }
@@ -76,15 +75,15 @@ export async function showHarbor(
       needsResize = false;
     }
 
-    const elapsedSeconds = lastFrame ? (now - lastFrame) / 1000 : 0;
+    const dt = lastFrame ? Math.min((now - lastFrame) / 1000, 0.1) : 0;
     lastFrame = now;
     const { pointer, sideways } = controls.movement;
     const walking = pointer !== null;
-    const moved = walking ? walk(walker, sideways, sideways === 0 ? 1 : 0, elapsedSeconds) : 0;
-    if (walking) follow.alignBehind(walker.heading);
+    const { x, z } = walker;
+    updateWalker(walker, walking, sideways, dt, motion.matches);
     mark.root.position.set(walker.x, walker.y, walker.z);
-    mark.pose(walker.heading, moved, elapsedSeconds, motion.matches, sideways);
-    const cameraMoving = follow.follow(walker.x, walker.y, walker.z, elapsedSeconds);
+    const posing = mark.pose(walker.heading, walker.x - x, walker.z - z, dt, motion.matches);
+    const cameraMoving = follow.follow(walker.x, walker.y, walker.z, walker.heading, walking, dt);
     boats[0].position.y = motion.matches ? 0 : Math.sin(now / 1150) * 0.054;
     boats[1].position.y = motion.matches ? 0 : Math.sin(now / 1090 + 1.5) * 0.07;
     renderer.render(scene, follow.camera);
@@ -104,7 +103,7 @@ export async function showHarbor(
         frames = 1;
       }
     }
-    if (!motion.matches || walking || cameraMoving || onStats) schedule();
+    if (!motion.matches || walking || posing || cameraMoving || onStats) schedule();
     else lastFrame = 0;
   }
 

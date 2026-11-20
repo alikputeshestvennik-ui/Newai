@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import tuning from '../data/player.json';
-import { canWalk, createWalker, steerWalker, walk } from '../src/player/movement';
+import { canWalk, createWalker, steerWalker, updateWalker, walk } from '../src/player/movement';
 
 function hold(walker: ReturnType<typeof createWalker>, sideways: number, forward: number, frames: number) {
   for (let i = 0; i < frames; i++) walk(walker, sideways, forward, 0.1);
@@ -51,6 +51,7 @@ describe('walking around the Istanbul pier', () => {
     expect(mark.heading).toBe(heading);
 
     steerWalker(mark, Math.PI / (2 * tuning.camera.lookRadiansPerPixel));
+    updateWalker(mark, false, 0, 1 / 60, true);
     expect(mark.heading).toBeCloseTo(Math.PI / 2);
     walk(mark, 0, 1, 0.1);
     expect(mark.x).toBeCloseTo(0);
@@ -64,7 +65,29 @@ describe('walking around the Istanbul pier', () => {
     const mark = { ...createWalker(), z: -4.8 };
     expect(walk(mark, 0, 1, 0.1)).toBeCloseTo(0);
     steerWalker(mark, -Math.PI / (2 * tuning.camera.lookRadiansPerPixel));
+    updateWalker(mark, false, 0, 1 / 60, true);
     expect(walk(mark, 0, 1, 0.1)).toBeGreaterThan(0);
     expect(mark.x).toBeLessThan(0);
+  });
+
+  it('starts and turns on the next frame, and stops within a few centimetres', () => {
+    const mark = createWalker();
+    const dt = 1 / 60;
+    const first = updateWalker(mark, true, 0, dt, false);
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(tuning.walkSpeed * dt);
+    steerWalker(mark, Math.PI / (2 * tuning.camera.lookRadiansPerPixel));
+    updateWalker(mark, true, 0, dt, false);
+    expect(mark.heading).toBeGreaterThan(Math.PI / 2);
+    expect(mark.heading).toBeLessThan(Math.PI);
+    for (let i = 0; i < 30; i++) updateWalker(mark, true, 0, dt, false);
+    expect(mark.heading).toBeCloseTo(Math.PI / 2);
+    expect(mark.x).toBeGreaterThan(0.4);
+
+    const stoppedFrom = mark.x;
+    for (let i = 0; i < 30; i++) updateWalker(mark, false, 0, dt, false);
+    expect(mark.x - stoppedFrom).toBeGreaterThan(0);
+    expect(mark.x - stoppedFrom).toBeLessThan(0.06);
+    expect(updateWalker(mark, false, 0, dt, false)).toBe(0);
   });
 });
