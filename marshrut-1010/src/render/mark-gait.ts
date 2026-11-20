@@ -8,7 +8,9 @@ const up = new Vector3(0, 1, 0);
 const across = new Vector3(1, 0, 0);
 const angleDelta = (angle: number) => Math.atan2(Math.sin(angle), Math.cos(angle));
 
-function createFoot(hip: Bone, knee: Bone, ankle: Bone, side: number) {
+export interface Leg { hip: Bone; knee: Bone; ankle: Bone; side: number }
+
+export function createFoot(hip: Bone, knee: Bone, ankle: Bone, side: number) {
   const hipPosition = hip.position.clone().add(hip.parent!.position);
   const upper = knee.position.clone();
   const lower = ankle.position.clone();
@@ -55,7 +57,7 @@ function createFoot(hip: Bone, knee: Bone, ankle: Bone, side: number) {
 
 export function createMarkGait(
   root: Group,
-  legs: { hip: Bone; knee: Bone; ankle: Bone; side: number }[],
+  legs: Leg[],
   surface = (x: number, z: number): number | undefined => floorHeight(x, z) || undefined,
 ) {
   const feet = legs.map(({ hip, knee, ankle, side }) => createFoot(hip, knee, ankle, side));
@@ -95,7 +97,7 @@ export function createMarkGait(
     return floor !== undefined ? target.set(px, floor + foot.ankleHeight, pz) : target.set(x, y + foot.ankleHeight, z);
   }
 
-  function step(heading: number, dx: number, dz: number, dt: number, running = false) {
+  function step(heading: number, dx: number, dz: number, dt: number) {
     const { x, y, z } = root.position;
     const cos = Math.cos(heading);
     const sin = Math.sin(heading);
@@ -120,7 +122,7 @@ export function createMarkGait(
       initialized = true;
     }
 
-    const leadSeconds = running ? settings.runLeadSeconds : settings.stepLeadSeconds;
+    const leadSeconds = settings.stepLeadSeconds;
     if (swing < 0) {
       if (!moving) {
         // Finish a stop or pivot with the feet under the hips.
@@ -141,10 +143,7 @@ export function createMarkGait(
         takeoff.copy(feet[swing].position);
         takeoffYaw = feet[swing].yaw;
         elapsed = 0;
-        if (running) {
-          duration = settings.runStepSeconds;
-          stepHeight = settings.runStepHeight;
-        } else if (moving) {
+        if (moving) {
           duration = settings.stepSeconds + (settings.strafeStepSeconds - settings.stepSeconds) * lateral;
           stepHeight = settings.stepHeight + (settings.strafeStepHeight - settings.stepHeight) * lateral;
         } else {

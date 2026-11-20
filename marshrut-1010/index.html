@@ -49,10 +49,16 @@
       </div>
       <output id="stats" hidden></output>
     </main>
-    <dialog id="ticket-dialog" aria-labelledby="ticket-title">
-      <h2 id="ticket-title"></h2>
-      <canvas id="ticket-symbol" role="img"></canvas>
-      <p id="ticket-clue"></p>
+    <dialog id="ticket-dialog" aria-labelledby="journal-title">
+      <h2 id="journal-title"></h2>
+      <p id="journal-message"></p>
+      <p id="journal-note"></p>
+      <ul id="journal-marks" hidden></ul>
+      <section id="journal-ticket" hidden>
+        <h3 id="ticket-title"></h3>
+        <canvas id="ticket-symbol" role="img"></canvas>
+        <p id="ticket-clue"></p>
+      </section>
       <form method="dialog">
         <button class="harbor-action" type="submit" autofocus></button>
       </form>

@@ -1,11 +1,12 @@
 import {
-  BoxGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial, SphereGeometry,
+  BoxGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial,
   TorusGeometry, Vector3,
 } from 'three';
 import chapter from '../../data/turkey-preview.json';
 import signs from '../../data/signs.json';
 import { laneCenter, type PreviewTarget } from '../story/turkey-preview';
 import { buildSignPlate } from './signs';
+import type { PreviewCast } from './preview-cast';
 
 const oak = 0x976b4b;
 const darkWood = 0x574642;
@@ -13,9 +14,8 @@ const yellow = 0xe1a048;
 const blue = 0x234449;
 const cream = 0xe6c785;
 
-export function buildPreviewSets() {
+export function buildPreviewSets({ courier, leila }: PreviewCast) {
   const boxShape = new BoxGeometry(1, 1, 1);
-  const headShape = new SphereGeometry(0.19, 10, 8);
   const hullShape = new CylinderGeometry(1, 0.65, 1, 8);
   const ringShape = new TorusGeometry(0.37, 0.085, 8, 20);
   const materials = new Map<number, MeshStandardMaterial>();
@@ -35,21 +35,6 @@ export function buildPreviewSets() {
     mesh.scale.set(w, h, d);
     group.add(mesh);
     return mesh;
-  }
-
-  function person(color: number) {
-    const figure = new Group();
-    const head = new Mesh(headShape, material(0xc18d68));
-    head.position.y = 1.59;
-    figure.add(head);
-    block(figure, 0x46342e, 0, 1.74, -0.015, 0.31, 0.12, 0.31);
-    block(figure, color, 0, 1.1, 0, 0.44, 0.64, 0.28);
-    for (const side of [-1, 1]) {
-      block(figure, blue, side * 0.12, 0.36, 0, 0.17, 0.72, 0.2);
-      const arm = block(figure, color, side * 0.29, 1.07, 0.01, 0.13, 0.56, 0.15);
-      arm.rotation.z = side * 0.15;
-    }
-    return figure;
   }
 
   function distantShore(group: Group, z: number) {
@@ -87,24 +72,23 @@ export function buildPreviewSets() {
   glass.scale.set(10.42, 2.43, 0.035);
   drama.add(glass);
 
-  const courier = person(0x49726d);
-  const leila = person(0xbb704c);
-  drama.add(courier, leila);
-  const envelope = block(courier, cream, 0.31, 0.95, 0.13, 0.23, 0.16, 0.025);
-  envelope.rotation.z = 0.2;
+  drama.add(courier.root, leila.root);
+  const envelope = block(courier.hand, cream, 0.015, -0.034, 0.033, 0.23, 0.16, 0.025);
+  envelope.rotation.z = -0.28;
   const watch = new Mesh(new CylinderGeometry(0.067, 0.067, 0.024, 16), material(0xc98a42));
   watch.rotation.x = Math.PI / 2;
-  watch.position.set(0.27, 1.045, 0.15);
-  courier.add(watch);
+  watch.position.set(-0.007, 0.016, 0.053);
+  courier.hand.add(watch);
   const dial = new Group();
-  dial.position.set(0.27, 1.045, 0.165);
+  dial.position.copy(watch.position);
+  dial.position.z += 0.016;
   for (const angle of [-Math.PI / 3, Math.PI / 3]) {
     const hand = block(dial, blue, 0, 0, 0, 0.007, 0.046, 0.008);
     hand.rotation.z = angle;
     hand.position.x = -Math.sin(angle) * 0.021;
     hand.position.y = Math.cos(angle) * 0.021;
   }
-  courier.add(dial);
+  courier.hand.add(dial);
 
   const ring = new Mesh(ringShape, material(0xc95437));
   ring.position.set(-2.3, 1.39, -2.34);

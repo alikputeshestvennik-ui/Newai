@@ -25,9 +25,16 @@ describe('Turkey scene preview', () => {
 
   it('requires time to move to the next lane before the obstacle', () => {
     const run = startRun();
-    advanceRun(run, 2.25);
+    advanceRun(run, 2.02);
     shiftLane(run, 1);
     expect(advanceRun(run, 0.2)).toBe('blocked');
+  });
+
+  it('runs slightly faster than the 3.5 m/s prototype without changing the course', () => {
+    const run = startRun();
+    advanceRun(run, 1);
+    expect(run.distance).toBeCloseTo(3.9);
+    expect(run.gate).toBe(0);
   });
 
   it('goes through both boats and checks the chosen sign at the exit', () => {

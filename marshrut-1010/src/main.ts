@@ -1,4 +1,5 @@
 import ru from '../data/ru.json';
+import chapter from '../data/turkey-preview.json';
 import { loadTicketProgress, saveTicketProgress, type TicketState } from './harbor/ticket';
 import { showHarbor, type HarborStats } from './render/scene';
 import { paintTicket } from './render/ticket';
@@ -15,7 +16,13 @@ const open = document.querySelector<HTMLButtonElement>('#open-ticket')!;
 const dialog = document.querySelector<HTMLDialogElement>('#ticket-dialog')!;
 const symbol = document.querySelector<HTMLCanvasElement>('#ticket-symbol')!;
 const words = ru.ticket;
+const journal = ru.journal;
+const journalTicket = document.querySelector<HTMLElement>('#journal-ticket')!;
+const marks = document.querySelector<HTMLUListElement>('#journal-marks')!;
+const briefingKey = 'route-1010:turkey-briefing:v1';
 let ticket: TicketState = { progress: loadTicketProgress(), nearTicket: false, wrongSign: undefined };
+let readBriefing = ticket.progress !== 'find';
+try { readBriefing ||= localStorage.getItem(briefingKey) === 'read'; } catch {}
 let harbor: Awaited<ReturnType<typeof showHarbor>> | undefined;
 const preview = createTurkeyPreview(document.querySelector('#game')!, canvas, () => {
   stats.hidden = true;
@@ -28,10 +35,13 @@ document.querySelector('#rotate-hint')!.textContent = ru.rotateHint;
 status.textContent = ru.loading;
 stick.setAttribute('aria-label', ru.moveStick);
 pickUp.textContent = words.pickUp;
-open.textContent = words.open;
-dialog.querySelector('h2')!.textContent = words.title;
-dialog.querySelector('p')!.textContent = words.clue;
-dialog.querySelector('button')!.textContent = words.close;
+open.textContent = readBriefing ? journal.open : journal.unread;
+document.querySelector('#journal-title')!.textContent = journal.title;
+document.querySelector('#journal-message')!.textContent = chapter.briefing.message;
+document.querySelector('#journal-note')!.textContent = chapter.briefing.note;
+document.querySelector('#ticket-title')!.textContent = words.title;
+document.querySelector('#ticket-clue')!.textContent = words.clue;
+dialog.querySelector('button')!.textContent = journal.close;
 symbol.setAttribute('aria-label', words.symbol);
 paintTicket(symbol);
 
@@ -41,19 +51,34 @@ function displayObjective() {
   objective.hidden = false;
   objective.classList.toggle('objective-complete', ticket.progress === 'complete');
   pickUp.hidden = !ticket.nearTicket;
-  open.hidden = ticket.progress === 'find';
+  open.hidden = false;
   preview.setAvailable(ticket.progress === 'complete');
 }
 
-function openTicket() {
+function openJournal() {
   harbor?.stopWalking();
+  if (!readBriefing) {
+    readBriefing = true;
+    open.textContent = journal.open;
+    try { localStorage.setItem(briefingKey, 'read'); } catch {}
+  }
+  journalTicket.hidden = ticket.progress === 'find';
+  const earned = [ticket.progress === 'complete' && journal.orientation, preview.connected && journal.connection];
+  marks.replaceChildren();
+  for (const entry of earned) {
+    if (!entry) continue;
+    const line = document.createElement('li');
+    line.textContent = entry;
+    marks.append(line);
+  }
+  marks.hidden = !marks.childElementCount;
   dialog.showModal();
 }
 
 pickUp.addEventListener('click', () => {
-  if (harbor?.pickUpTicket()) openTicket();
+  if (harbor?.pickUpTicket()) openJournal();
 });
-open.addEventListener('click', openTicket);
+open.addEventListener('click', openJournal);
 dialog.addEventListener('close', () => open.focus());
 matchMedia('(orientation: portrait)').addEventListener('change', ({ matches }) => {
   if (matches && dialog.open) dialog.close();

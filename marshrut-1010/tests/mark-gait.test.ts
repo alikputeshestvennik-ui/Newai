@@ -57,3 +57,42 @@ it.each([0, -1, 1])('plants a foot while walking with sideways input %d and sett
     expect(Math.hypot(foot.x - walker.x, foot.z - walker.z)).toBeLessThan(0.25);
   });
 });
+
+it('runs with alternating push-offs and flight, even when changing lanes', () => {
+  const { model, ankles } = loadRig();
+  const mark = buildMark(model);
+  const dt = 1 / 120;
+  mark.posePreview(Math.PI, 0, 0, dt, false, true);
+  const sole = ankles[0].getWorldPosition(new Vector3()).y;
+  const contacts = new Set<number>();
+  let flightFrames = 0;
+  let highest = sole;
+  const shoulders = ['L', 'R'].map((side) => model.getObjectByName(`upperarm01_${side}`)!);
+  let swing = 0;
+  for (let index = 1; index <= 240; index++) {
+    const distance = index * dt * 3.9;
+    const shifting = index > 85 && index <= 105;
+    const dx = shifting ? 9 * dt : 0;
+    mark.root.position.x += dx;
+    mark.root.position.z = -distance;
+    mark.poseRun(distance, dx, dt, true);
+    const feet = ankles.map((ankle) => ankle.getWorldPosition(new Vector3()));
+    if (index > 30) {
+      feet.forEach((foot, leg) => {
+        if (!shifting && Math.abs(foot.y - sole) < 0.009) contacts.add(leg);
+        expect(foot.y).toBeGreaterThan(sole - 0.016);
+        expect(Math.abs(foot.x - mark.root.position.x)).toBeLessThan(0.37);
+      });
+      if (feet.every(({ y }) => y > sole + 0.025)) flightFrames++;
+      highest = Math.max(highest, ...feet.map(({ y }) => y));
+      swing = Math.max(swing, Math.abs(shoulders[0].rotation.x - shoulders[1].rotation.x));
+    }
+  }
+  expect([...contacts].sort()).toEqual([0, 1]);
+  expect(flightFrames).toBeGreaterThan(25);
+  expect(highest - sole).toBeGreaterThan(0.22);
+  expect(swing).toBeGreaterThan(0.75);
+
+  for (let index = 0; index < 30; index++) mark.poseRun(7.8, 0, dt, false);
+  ankles.forEach((ankle) => expect(ankle.getWorldPosition(new Vector3()).y).toBeCloseTo(sole, 2));
+});

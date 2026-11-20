@@ -8,6 +8,7 @@ import { createFollowCamera } from './follow-camera';
 import { loadMark } from './mark';
 import { buildPier } from './pier';
 import { createPreviewView } from './preview';
+import { loadPreviewCast } from './preview-cast';
 import type { createTurkeyPreview } from '../ui/turkey-preview';
 import { buildTicket } from './ticket';
 
@@ -28,7 +29,7 @@ interface HarborOptions {
 
 export async function showHarbor(canvas: HTMLCanvasElement, stick: HTMLElement, options: HarborOptions) {
   const { ticketProgress, onTicketChange, onReady, onContextLost, onStats, preview } = options;
-  const mark = await loadMark();
+  const [mark, cast] = await Promise.all([loadMark(), loadPreviewCast()]);
   const renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
   const scene = new Scene();
   scene.background = new Color(0x437a70);
@@ -135,7 +136,7 @@ export async function showHarbor(canvas: HTMLCanvasElement, stick: HTMLElement, 
 
   function drawPreview(dt: number) {
     if (!previewView) {
-      previewView = createPreviewView(mark, preview.placeTarget);
+      previewView = createPreviewView(mark, cast, preview.placeTarget);
       scene.add(previewView.sets.drama, previewView.sets.running);
     }
     if (previewView.camera.aspect !== follow.camera.aspect) {

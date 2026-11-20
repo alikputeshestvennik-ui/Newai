@@ -5,3 +5,7 @@ The base mesh, male shape, weights and eyes come from [MakeHuman](https://github
 The jacket and jeans (`male_casualsuit05`), boots (`shoes03`), hair (`short04`), eyebrows
 (`eyebrow003`) and skin (`young_caucasian_male`) come from the [MakeHuman system assets](https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html).
 These source assets are [CC0](https://github.com/makehumancommunity/makehuman/blob/master/LICENSE.ASSETS.md).
+
+`courier.glb` and `leila.glb` use the same rig and source pack. The courier uses a blended young/old face,
+middle-age skin, `male_casualsuit04` and `short03`; Leila uses the young female shape and skin,
+`female_casualsuit01` and `bob02`. Both are fitted and skinned separately and include their textures.

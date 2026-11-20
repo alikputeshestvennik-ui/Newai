@@ -152,9 +152,9 @@ test('picks up the ticket, reopens it, and remembers the solved passage', async 
   await page.goto('/');
   await expect(page.getByText(words.find, { exact: true })).toBeVisible();
   const pickup = page.getByRole('button', { name: words.pickUp, exact: true });
-  const open = page.getByRole('button', { name: words.open, exact: true });
-  const close = page.getByRole('button', { name: words.close, exact: true });
-  const dialog = page.getByRole('dialog', { name: words.title });
+  const open = page.getByRole('button', { name: ru.journal.open, exact: true });
+  const close = page.getByRole('button', { name: ru.journal.close, exact: true });
+  const dialog = page.getByRole('dialog', { name: ru.journal.title });
   const session = await page.context().newCDPSession(page);
   const move = { x: 200, y: 280, id: 0 };
   const startWalking = () => session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [move] });
@@ -162,6 +162,12 @@ test('picks up the ticket, reopens it, and remembers the solved passage', async 
 
   await expect(pickup).toBeHidden();
   await expect(open).toBeHidden();
+  await page.getByRole('button', { name: ru.journal.unread, exact: true }).tap();
+  await expect(dialog.getByText(/Посредник:/)).toBeVisible();
+  await expect(dialog.getByRole('img', { name: words.symbol })).toBeHidden();
+  await close.tap();
+  await page.reload();
+  await expect(open).toBeVisible();
   await startWalking();
   await expect(pickup).toBeVisible({ timeout: 20_000 });
   await stopWalking();

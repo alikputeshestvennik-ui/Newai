@@ -2,6 +2,7 @@ import chapter from '../../data/turkey-preview.json';
 import { matchingSign } from '../harbor/ticket';
 
 const saveKey = 'route-1010:turkey-preview:v1';
+const connectionKey = 'route-1010:turkey-connection:v1';
 const checkpoints = ['intro', 'aim', 'runner', 'outro', 'complete'] as const;
 
 export type Checkpoint = typeof checkpoints[number];
@@ -18,9 +19,22 @@ export function loadCheckpoint(): Checkpoint {
 
 export function saveCheckpoint(stage: Checkpoint) {
   try {
+    if (stage === 'outro' || stage === 'complete') localStorage.setItem(connectionKey, 'earned');
     localStorage.setItem(saveKey, stage);
   } catch {
     // The scene still works when storage is unavailable.
+  }
+}
+
+export function loadConnection(stage: Checkpoint) {
+  if (stage === 'outro' || stage === 'complete') {
+    saveCheckpoint(stage);
+    return true;
+  }
+  try {
+    return localStorage.getItem(connectionKey) === 'earned';
+  } catch {
+    return false;
   }
 }
 

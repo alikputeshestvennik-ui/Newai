@@ -174,7 +174,7 @@ h1 {
 
 #ticket-dialog {
   box-sizing: border-box;
-  width: min(21rem, 80vw);
+  width: min(33rem, 90vw);
   max-height: min(24rem, 90dvh);
   overflow: auto;
   border: 1px solid #caa969;
@@ -196,7 +196,7 @@ h1 {
 
 #ticket-symbol {
   display: block;
-  width: min(100%, 13rem, 63dvh);
+  width: min(100%, 9rem, 28dvh);
   height: auto;
   margin: auto;
 }
@@ -204,6 +204,25 @@ h1 {
 #ticket-dialog p {
   margin: 0.65rem 0;
   font-size: 0.9rem;
+}
+
+#journal-marks {
+  padding: 0;
+  list-style: none;
+  color: #ffe3a4;
+}
+
+#journal-ticket {
+  border-top: 1px solid #caa96966;
+}
+
+#ticket-title {
+  margin: 0.55rem 0;
+  font: 500 1.14rem Georgia, serif;
+}
+
+.controls:has(#objective.objective-complete) {
+  right: max(12.25rem, calc(env(safe-area-inset-right) + 11.25rem));
 }
 
 #start-preview {

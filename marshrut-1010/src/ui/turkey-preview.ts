@@ -2,7 +2,7 @@ import chapter from '../../data/turkey-preview.json';
 import ru from '../../data/ru.json';
 import type { PreviewFrame } from '../render/preview';
 import {
-  advanceRun, checkSignal, createRun, loadCheckpoint, saveCheckpoint, shiftLane,
+  advanceRun, checkSignal, createRun, loadCheckpoint, loadConnection, saveCheckpoint, shiftLane,
   type Checkpoint, type Cutscene, type PreviewTarget,
 } from '../story/turkey-preview';
 
@@ -31,6 +31,7 @@ export function createTurkeyPreview(root: HTMLElement, canvas: HTMLCanvasElement
     return [id, button];
   }));
   const frame: PreviewFrame = { stage: loadCheckpoint(), line: 0, signaled: false, run: createRun() };
+  let connected = loadConnection(frame.stage);
   let active = false;
   let available = false;
   let selected: PreviewTarget | undefined;
@@ -89,6 +90,7 @@ export function createTurkeyPreview(root: HTMLElement, canvas: HTMLCanvasElement
     selected = undefined;
     wrongTarget = false;
     saveCheckpoint(stage);
+    if (stage === 'outro') connected = true;
     display();
     refresh();
   }
@@ -193,6 +195,7 @@ export function createTurkeyPreview(root: HTMLElement, canvas: HTMLCanvasElement
 
   return {
     frame,
+    get connected() { return connected; },
     get active() { return active; },
     setAvailable(value: boolean) {
       available = value;

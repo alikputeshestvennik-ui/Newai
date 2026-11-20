@@ -16,7 +16,10 @@ test('previews the cutscene, board signal, and runner and saves the ending', asy
   await page.goto('/');
   await expect(page.getByRole('button', { name: words.enter })).toBeHidden();
   await page.evaluate(() => localStorage.setItem('route-1010:harbor-ticket:v1', 'complete'));
+  const actors = ['courier', 'leila'].map((name) => page.waitForResponse((response) =>
+    new RegExp(`/assets/${name}-[^/]+\\.glb$`).test(response.url())));
   await page.goto('/?stats');
+  for (const response of await Promise.all(actors)) expect(response.ok()).toBe(true);
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   const title = (name: string) => page.getByRole('heading', { name, exact: true });
   const metrics: Record<string, string> = {};
@@ -40,6 +43,7 @@ test('previews the cutscene, board signal, and runner and saves the ending', asy
   await capture('cutscene');
   await expect(page.getByText(chapter.intro[0].line, { exact: true })).toBeVisible();
   await button(words.next).tap();
+  await capture('courier');
   await button(words.next).tap();
   await button(words.aim).tap();
   await expect(title(words.titles.aim)).toBeVisible();
@@ -63,6 +67,7 @@ test('previews the cutscene, board signal, and runner and saves the ending', asy
   await expect(page.getByText(words.run.blocked, { exact: true })).toBeVisible({ timeout: 25_000 });
   await button(words.retry).tap();
   await button(words.right).tap();
+  await page.screenshot({ path: testInfo.outputPath('running.png') });
   await expect(page.getByText(words.runGates[1], { exact: true })).toBeVisible({ timeout: 25_000 });
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('ArrowLeft');
@@ -70,6 +75,10 @@ test('previews the cutscene, board signal, and runner and saves the ending', asy
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
   await expect(title(words.titles.outro)).toBeVisible({ timeout: 30_000 });
+  for (const beat of chapter.outro.slice(1)) {
+    await button(words.next).tap();
+    await expect(page.getByText(beat.line, { exact: true })).toBeVisible();
+  }
   await button(words.skip).tap();
   await expect(page.getByText(words.summary, { exact: true })).toBeVisible();
   await capture('ending');
@@ -82,5 +91,10 @@ test('previews the cutscene, board signal, and runner and saves the ending', asy
   await expect(title(words.titles.intro)).toBeVisible();
   await button(words.back).tap();
   await expect(page.getByText(ru.ticket.complete, { exact: true })).toBeVisible();
+  await page.reload();
+  await button(ru.journal.open).tap();
+  const journal = page.getByRole('dialog', { name: ru.journal.title });
+  await expect(journal.getByText(ru.journal.orientation)).toBeVisible();
+  await expect(journal.getByText(ru.journal.connection)).toBeVisible();
   expect(errors).toEqual([]);
 });
