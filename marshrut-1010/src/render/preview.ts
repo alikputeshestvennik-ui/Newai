@@ -12,8 +12,8 @@ export interface PreviewFrame {
 }
 
 const introShots = [
-  { from: [-1.84, 1.81, -1.85], to: [-0.18, 1.32, -4.56] },
-  { from: [-2.1, 1.75, -1.95], to: [0.67, 1.4, -4.65] },
+  { from: [-0.32, 1.64, -2.66], to: [-0.22, 1.25, -4.59] },
+  { from: [0.63, 1.67, -2.92], to: [0.77, 1.42, -4.67] },
   { from: [2.8, 2, 2.95], to: [0.15, 1.65, -2.43] },
 ];
 const outroShots = [
@@ -77,7 +77,7 @@ export function createPreviewView(
     const courierX = finishing ? 0.42 : signaled ? 1.95 : 0.82;
     const leilaX = finishing ? 1.65 : signaled ? 2.72 : -0.83;
     const courierMoving = cast.courier.pose(courierX, finishing ? -0.42 : -4.77,
-      finishing ? -0.35 : signaled ? Math.PI / 2 : -0.55, stage === 'intro' && line === 1, finishing, dt, reset);
+      finishing ? -0.35 : signaled ? Math.PI / 2 : -0.19, stage === 'intro' && line === 1, finishing, dt, reset);
     const leilaMoving = cast.leila.pose(leilaX, finishing ? -0.79 : -4.57,
       finishing ? -0.35 : signaled ? Math.PI / 2 : 0.4,
       (stage === 'intro' && line === 0) || (stage === 'outro' && line === 3), false, dt, reset);

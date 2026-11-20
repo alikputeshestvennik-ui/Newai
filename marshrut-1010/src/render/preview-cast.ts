@@ -30,10 +30,10 @@ function buildActor(model: Group) {
       model.position.y = step.offset;
       head.rotation.set(-0.06 * gesture, 0.16 * gesture, -0.075 * gesture);
       chest.rotation.y = 0.075 * gesture + step.armSwing * 0.04;
-      for (const { shoulder, elbow, side } of limbs) {
+      for (const { shoulder, elbow, bendAxis, side } of limbs) {
         const raising = side === 1 ? gesture : 0;
         shoulder.rotation.x = -0.24 * raising + step.armSwing * side * 0.25;
-        elbow.rotation.x = -0.15 - 1.35 * raising;
+        elbow.quaternion.setFromAxisAngle(bendAxis, 0.34 - 0.91 * raising);
       }
       return !reset && (Math.abs(root.position.x - x) > 0.001 || step.active
         || Math.abs(gesture - desiredGesture) > 0.001);

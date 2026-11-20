@@ -1,4 +1,4 @@
-import type { Bone, Object3D } from 'three';
+import { Vector3, type Bone, type Object3D } from 'three';
 
 export function bindCharacterRig(model: Object3D) {
   function bone(name: string) {
@@ -13,11 +13,12 @@ export function bindCharacterRig(model: Object3D) {
     const elbow = bone(`lowerarm01_${suffix}`);
     const armAngle = Math.atan2(elbow.position.x, -elbow.position.y);
     shoulder.rotation.z = -armAngle + side * 0.09;
+    const bendAxis = new Vector3(Math.cos(shoulder.rotation.z), -Math.sin(shoulder.rotation.z), 0);
     for (const finger of [2, 3, 4, 5]) {
       bone(`finger${finger}-1_${suffix}`).rotation.x = 0.24;
     }
     return {
-      side, shoulder, elbow, wrist: bone(`wrist_${suffix}`),
+      side, shoulder, elbow, bendAxis, wrist: bone(`wrist_${suffix}`),
       hip: bone(`upperleg01_${suffix}`),
       knee: bone(`lowerleg01_${suffix}`),
       ankle: bone(`foot_${suffix}`),

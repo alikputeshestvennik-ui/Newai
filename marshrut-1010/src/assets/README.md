@@ -7,5 +7,5 @@ The jacket and jeans (`male_casualsuit05`), boots (`shoes03`), hair (`short04`),
 These source assets are [CC0](https://github.com/makehumancommunity/makehuman/blob/master/LICENSE.ASSETS.md).
 
 `courier.glb` and `leila.glb` use the same rig and source pack. The courier uses a blended young/old face,
-middle-age skin, `male_casualsuit04` and `short03`; Leila uses the young female shape and skin,
+middle-age skin, `male_worksuit01` and `short03`; Leila uses the young female shape and skin,
 `female_casualsuit01` and `bob02`. Both are fitted and skinned separately and include their textures.

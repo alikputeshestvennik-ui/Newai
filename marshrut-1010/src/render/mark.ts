@@ -49,10 +49,14 @@ export function buildMark(model: Group) {
       -(running ? 0.22 : 0.07) * sideways * effort);
     head.rotation.set(-chest.rotation.x * 0.7, -chest.rotation.y * 0.55, -chest.rotation.z * 0.75);
 
-    for (const { shoulder, elbow, side } of limbs) {
+    for (const { shoulder, elbow, bendAxis, side } of limbs) {
       const swing = armSwing * side;
       shoulder.rotation.x = swing * (running ? 0.56 : 0.24) - 0.04 * effort;
-      elbow.rotation.x = running ? -effort * (1.23 - swing * 0.18) : 0.55 - (0.08 * effort + Math.max(0, -swing) * 0.16);
+      if (running) {
+        elbow.quaternion.setFromAxisAngle(bendAxis, 0.43 - effort * (1.07 - swing * 0.13));
+      } else {
+        elbow.rotation.set(0.55 - (0.08 * effort + Math.max(0, -swing) * 0.16), 0, 0);
+      }
     }
     return active;
   }

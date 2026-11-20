@@ -68,6 +68,8 @@ it('runs with alternating push-offs and flight, even when changing lanes', () =>
   let flightFrames = 0;
   let highest = sole;
   const shoulders = ['L', 'R'].map((side) => model.getObjectByName(`upperarm01_${side}`)!);
+  const elbows = ['L', 'R'].map((side) => model.getObjectByName(`lowerarm01_${side}`)!);
+  const wrists = ['L', 'R'].map((side) => model.getObjectByName(`wrist_${side}`)!);
   let swing = 0;
   for (let index = 1; index <= 240; index++) {
     const distance = index * dt * 3.9;
@@ -84,6 +86,12 @@ it('runs with alternating push-offs and flight, even when changing lanes', () =>
         expect(Math.abs(foot.x - mark.root.position.x)).toBeLessThan(0.37);
       });
       if (feet.every(({ y }) => y > sole + 0.025)) flightFrames++;
+      if (!shifting && index < 85) {
+        wrists.forEach((wrist, arm) => {
+          const elbow = elbows[arm].getWorldPosition(new Vector3());
+          expect(Math.abs(wrist.getWorldPosition(new Vector3()).x - elbow.x)).toBeLessThan(0.11);
+        });
+      }
       highest = Math.max(highest, ...feet.map(({ y }) => y));
       swing = Math.max(swing, Math.abs(shoulders[0].rotation.x - shoulders[1].rotation.x));
     }
