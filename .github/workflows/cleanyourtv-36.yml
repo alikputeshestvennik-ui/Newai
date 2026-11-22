@@ -1,0 +1,58 @@
+name: Build CleanYourTV 3.6
+on:
+  push:
+    branches: [codex/cleanyourtv-3-6]
+    paths: [.github/workflows/cleanyourtv-36.yml]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Gathin23/cleanyourtv
+          ref: f63a1ebcdcd63aae1ec1b6f62aa4d2a6858c116b
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Test, lint and build
+        working-directory: launcher
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon testReleaseUnitTest lintRelease assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cleanyourtv-build
+          path: launcher/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 1
+  sign:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cleanyourtv-build
+      - name: Sign and verify APK
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          keystore=$(mktemp)
+          trap 'rm -f "$keystore"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 --decode > "$keystore"
+          test -s "$keystore"
+          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          "$apksigner" sign --ks "$keystore" --ks-pass env:ANDROID_STORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD --v4-signing-enabled false --out CleanYourTV-3.6.apk app-release.apk
+          "$apksigner" verify --print-certs CleanYourTV-3.6.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CleanYourTV-3.6
+          path: CleanYourTV-3.6.apk
+          if-no-files-found: error
