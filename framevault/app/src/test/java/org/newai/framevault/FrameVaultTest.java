@@ -10,6 +10,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
@@ -147,11 +148,10 @@ public class FrameVaultTest {
         return bytes;
     }
 
-    private static boolean ffmpegAvailable() throws InterruptedException {
+    private boolean ffmpegAvailable() throws InterruptedException {
         try {
             Process process = new ProcessBuilder("ffmpeg", "-version")
-                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                    .redirectError(ProcessBuilder.Redirect.DISCARD).start();
+                    .redirectErrorStream(true).redirectOutput(folder.newFile()).start();
             return process.waitFor(5, TimeUnit.SECONDS) && process.exitValue() == 0;
         } catch (IOException e) {
             return false;
@@ -172,6 +172,7 @@ public class FrameVaultTest {
             process.destroyForcibly();
             throw new AssertionError("FFmpeg timed out");
         }
-        assertEquals(Files.readString(log.toPath()), 0, process.exitValue());
+        String output = new String(Files.readAllBytes(log.toPath()), StandardCharsets.UTF_8);
+        assertEquals(output, 0, process.exitValue());
     }
 }
