@@ -33,10 +33,15 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
       - name: Install video test tools
+        timeout-minutes: 2
         run: |
           if ! command -v ffmpeg >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg
+            video_tools="$RUNNER_TEMP/framevault-ffmpeg"
+            printf '%s\n' 'imageio-ffmpeg==0.6.0 --hash=sha256:c7e46fcec401dd990405049d2e2f475e2b397779df2519b544b8aab515195282' | \
+              python3 -m pip install --target "$video_tools" --only-binary=:all: --no-deps --require-hashes -r /dev/stdin
+            ln -s "$video_tools"/imageio_ffmpeg/binaries/ffmpeg-linux-* "$video_tools/ffmpeg"
+            "$video_tools/ffmpeg" -version
+            echo "$video_tools" >> "$GITHUB_PATH"
           fi
       - name: Test and build debug APK
         run: gradle --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
