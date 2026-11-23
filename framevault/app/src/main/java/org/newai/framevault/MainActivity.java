@@ -258,11 +258,6 @@ public final class MainActivity extends Activity {
         if (result != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
         if (request == PICK) {
-            try {
-                getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            } catch (SecurityException ignored) {
-                // A temporary grant is sufficient while this activity is open.
-            }
             readSource(uri);
             session.conversion.clear();
         } else if (request == EXPORT) {
