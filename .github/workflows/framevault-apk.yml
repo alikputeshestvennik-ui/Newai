@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: framevault-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -25,9 +29,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Install build and video test tools
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - name: Install video test tools
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
           if ! command -v ffmpeg >/dev/null; then
             sudo apt-get update
             sudo apt-get install -y ffmpeg
@@ -91,12 +97,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Enable KVM and install Android SDK
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Verify actual Android video playback and recovery
         uses: reactivecircus/android-emulator-runner@v2
         with:
