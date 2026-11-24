@@ -8,11 +8,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import re
 import secrets
+import socket
 import threading
+import time
 from urllib.parse import urlsplit
 
 
 HOST = "integrate.api.nvidia.com"
+SOCKET_TIMEOUT = 30
+FIRST_OUTPUT_TIMEOUT = 60
+KIMI_REASONING_MODELS = {"moonshotai/kimi-k3", "moonshotai/kimi-k3.1-pro"}
 
 
 def is_nvidia_endpoint(url):
@@ -104,6 +109,10 @@ def chat_request(request, reasoning_by_call):
             body["tools"].append({"type": "function", "function": function})
     if request.get("max_output_tokens") is not None:
         body["max_tokens"] = request["max_output_tokens"]
+    if body["model"] in KIMI_REASONING_MODELS:
+        effort = (request.get("reasoning") or {}).get("effort")
+        if effort in ("low", "medium", "high"):
+            body["reasoning_effort"] = effort
     return body, tools
 
 
@@ -121,7 +130,7 @@ def response_tool(call_id, name, arguments, tools):
     return item
 
 
-def responses_stream(upstream, tools, reasoning_by_call, emit):
+def responses_stream(upstream, tools, reasoning_by_call, emit, first_output_received):
     response_id = "resp_" + secrets.token_hex(12)
     message = {"type": "message", "role": "assistant", "id": "msg_" + secrets.token_hex(12), "content": []}
     text = []
@@ -153,6 +162,7 @@ def responses_stream(upstream, tools, reasoning_by_call, emit):
                 emit("response.in_progress", response={"id": response_id})
             if content := delta.get("content"):
                 if not text:
+                    first_output_received()
                     emit("response.output_item.added", item=message, output_index=0)
                 text.append(content)
                 emit("response.output_text.delta", item_id=message["id"], output_index=0, content_index=0, delta=content)
@@ -166,6 +176,8 @@ def responses_stream(upstream, tools, reasoning_by_call, emit):
         raise ValueError("Поток NVIDIA закрылся без завершения ответа")
     if finish == "tool_calls" and not calls:
         raise ValueError("NVIDIA завершила ответ без данных вызова инструмента")
+    if finish == "stop" and not (text or calls):
+        raise ValueError("NVIDIA завершила запрос без текста ответа")
 
     items = []
     if text:
@@ -188,6 +200,7 @@ def responses_stream(upstream, tools, reasoning_by_call, emit):
         if reasoning:
             reasoning_by_call[call["id"]] = "".join(reasoning)
         item = response_tool(call["id"], call["name"], "".join(call["arguments"]), tools)
+        first_output_received()
         emit("response.output_item.added", item=item, output_index=len(items))
         emit("response.output_item.done", item=item, output_index=len(items))
         items.append(item)
@@ -217,48 +230,93 @@ def adapter(provider_token):
                     raise ValueError("invalid body size")
                 request = json.loads(self.rfile.read(length))
                 body, tools = chat_request(request, reasoning_by_call)
-            except (KeyError, TypeError, ValueError):
+            except (AttributeError, KeyError, TypeError, ValueError):
                 self.send_error(400, "Invalid Responses request")
                 return
 
-            upstream = http.client.HTTPSConnection(HOST, timeout=120)
+            with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+                with contextlib.closing(http.client.HTTPSConnection(HOST, timeout=SOCKET_TIMEOUT)) as upstream:
+                    self.forward(upstream, body, tools)
+
+        def send_failure(self, status, message):
+            data = json.dumps({"error": {"message": message}}, ensure_ascii=False).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def forward(self, upstream, body, tools):
+            started = time.monotonic()
+            expired = threading.Event()
+            timeout_message = (
+                f"NVIDIA не начала ответ за {FIRST_OUTPUT_TIMEOUT} сек. "
+                "Попробуйте ещё раз или выберите другую модель."
+            )
+
+            timer = None
             try:
+                upstream.connect()
+                connection = upstream.sock
+
+                def expire():
+                    expired.set()
+                    with contextlib.suppress(OSError):
+                        connection.shutdown(socket.SHUT_RDWR)
+
+                # Reasoning deltas and keepalives reset the socket timeout without producing a reply.
+                remaining = max(0, FIRST_OUTPUT_TIMEOUT - (time.monotonic() - started))
+                timer = threading.Timer(remaining, expire)
+                timer.daemon = True
+                timer.start()
                 upstream.request("POST", "/v1/chat/completions", body=json.dumps(body), headers={
                     "Content-Type": "application/json", "Accept": "text/event-stream",
                     "Authorization": "Bearer " + provider_token,
                 })
                 response = upstream.getresponse()
-            except (OSError, http.client.HTTPException):
-                upstream.close()
-                self.send_error(502, "Could not connect to NVIDIA")
+                with response:
+                    self.forward_response(response, tools, timer.cancel, expired, timeout_message)
+            except (OSError, http.client.HTTPException) as exc:
+                if expired.is_set():
+                    self.send_failure(504, timeout_message)
+                elif isinstance(exc, TimeoutError):
+                    self.send_failure(504, f"NVIDIA не присылала данные {SOCKET_TIMEOUT} сек. Попробуйте ещё раз.")
+                else:
+                    self.send_failure(502, "Не удалось получить ответ от NVIDIA. Проверьте подключение и повторите запрос.")
+            finally:
+                if timer is not None:
+                    timer.cancel()
+
+        def forward_response(self, response, tools, first_output_received, expired, timeout_message):
+            if response.status == 202:
+                self.send_failure(503, "NVIDIA поставила запрос в очередь. Попробуйте ещё раз или выберите другую модель.")
                 return
-
-            with contextlib.closing(upstream), response:
-                if response.status != 200:
-                    details = response.read(4096).decode(errors="replace").replace(provider_token, "[redacted]")
-                    self.send_response(response.status)
-                    self.send_header("Content-Type", response.getheader("Content-Type", "text/plain"))
-                    if retry_after := response.getheader("Retry-After"):
-                        self.send_header("Retry-After", retry_after)
-                    self.end_headers()
-                    self.wfile.write(details.encode())
-                    return
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
+            if response.status != 200:
+                details = response.read(4096).decode(errors="replace").replace(provider_token, "[redacted]")
+                self.send_response(response.status)
+                self.send_header("Content-Type", response.getheader("Content-Type", "text/plain"))
+                if retry_after := response.getheader("Retry-After"):
+                    self.send_header("Retry-After", retry_after)
                 self.end_headers()
+                self.wfile.write(details.encode())
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
 
-                def emit(kind, **data):
-                    event = json.dumps({"type": kind, **data}, ensure_ascii=False)
-                    self.wfile.write(f"event: {kind}\ndata: {event}\n\n".encode())
+            def emit(kind, **data):
+                event = json.dumps({"type": kind, **data}, ensure_ascii=False)
+                self.wfile.write(f"event: {kind}\ndata: {event}\n\n".encode())
 
-                try:
-                    responses_stream(response, tools, reasoning_by_call, emit)
-                except (OSError, KeyError, ValueError, TypeError, http.client.HTTPException) as exc:
-                    if not isinstance(exc, (BrokenPipeError, ConnectionResetError)):
-                        with contextlib.suppress(OSError):
-                            emit("response.failed", response={"error": {
-                                "message": "Ошибка потока NVIDIA: " + str(exc)[:250],
-                            }})
+            try:
+                responses_stream(response, tools, reasoning_by_call, emit, first_output_received)
+            except (OSError, KeyError, ValueError, TypeError, http.client.HTTPException) as exc:
+                message = "Ошибка потока NVIDIA: " + str(exc)[:250]
+                if expired.is_set():
+                    message = timeout_message
+                elif isinstance(exc, TimeoutError):
+                    message = f"NVIDIA не присылала данные {SOCKET_TIMEOUT} сек. Попробуйте ещё раз."
+                with contextlib.suppress(OSError):
+                    emit("response.failed", response={"error": {"code": "nvidia_stream_error", "message": message}})
 
     with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
         thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True)

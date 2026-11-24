@@ -425,6 +425,8 @@ send(method="turn/completed", params={"turn": {"status": "completed",
         def inspect(task, args, prompt, env, output, timeout):
             self.assertNotEqual(env["TEN_PROVIDER_TOKEN"], "nvidia-key")
             self.assertIn('wire_api="responses"', str(args))
+            self.assertIn("model_providers.ten_provider.request_max_retries=0", args)
+            self.assertIn("model_providers.ten_provider.stream_max_retries=0", args)
             self.assertIn("moonshotai/kimi-k3.1-pro", args)
             self.assertRegex(str(args), r'base_url="http://127\.0\.0\.1:\d+"')
 

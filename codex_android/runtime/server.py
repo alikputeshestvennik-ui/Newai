@@ -928,7 +928,8 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
             backend = "https://anymodel.org/v1"
         elif selected.startswith("compatible:"):
             backend = base_url
-        if backend and nvidia_chat.is_nvidia_endpoint(backend):
+        is_nvidia = backend is not None and nvidia_chat.is_nvidia_endpoint(backend)
+        if is_nvidia:
             backend, provider_token = providers.enter_context(nvidia_chat.adapter(provider_token.strip()))
         runtime_options = codex_runtime_config(os.environ)
         provider_options: list[str] = []
@@ -941,6 +942,11 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
                 "-c", 'model_providers.ten_provider.wire_api="responses"',
                 "-c", "model_providers.ten_provider.requires_openai_auth=false",
             ]
+            if is_nvidia:
+                provider_options += [
+                    "-c", "model_providers.ten_provider.request_max_retries=0",
+                    "-c", "model_providers.ten_provider.stream_max_retries=0",
+                ]
         effort_options: list[str] = []
         if reasoning_effort in {"low", "medium", "high"}:
             effort_options = ["-c", "model_reasoning_effort=" + json.dumps(reasoning_effort)]
