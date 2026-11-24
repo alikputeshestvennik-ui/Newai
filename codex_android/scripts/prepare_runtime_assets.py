@@ -168,8 +168,8 @@ def main() -> int:
         if stale.name not in active:
             stale.unlink()
     runtime_dir.mkdir(parents=True, exist_ok=True)
-    server = ROOT / "runtime/server.py"
-    (runtime_dir / "server.py").write_bytes(server.read_bytes())
+    for name in ("server.py", "nvidia_chat.py"):
+        (runtime_dir / name).write_bytes((ROOT / "runtime" / name).read_bytes())
     (runtime_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
     total = sum(item["size"] for item in manifest["packages"].values())
     print(f"Runtime assets ready: {len(names)} packages, {total / 1_000_000:.1f} MB of .deb")

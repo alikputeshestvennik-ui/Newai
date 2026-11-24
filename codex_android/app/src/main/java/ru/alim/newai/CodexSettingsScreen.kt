@@ -584,7 +584,7 @@ private fun AddProviderDialog(onClose: () -> Unit, onStatus: (String) -> Unit) {
                 OutlinedTextField(base, { base = it }, Modifier.fillMaxWidth(), label = { Text("https://api.example.com/v1") }, singleLine = true)
                 OutlinedTextField(key, { key = it }, Modifier.fillMaxWidth(), label = { Text("API-ключ") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation())
-                Text("Адрес должен поддерживать OpenAI-совместимый GET /models и Responses API.",
+                Text("Нужен OpenAI-совместимый GET /models. NVIDIA использует Chat Completions, остальные провайдеры — Responses API.",
                     style = body(11, color = Muted), lineHeight = 15.sp)
                 if (error.isNotBlank()) Text(error, style = body(12, color = Danger))
             }

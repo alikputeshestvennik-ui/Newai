@@ -26,6 +26,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
+import nvidia_chat
+
 ROOT = Path(os.environ.get("TEN_LOCAL_HOME", Path.home() / ".ten-local"))
 ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
 TOKEN = ROOT / "token"
@@ -905,6 +907,7 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
     keeps a single HTTP stream open for many minutes.
     """
     output_dir: Path | None = None
+    providers = contextlib.ExitStack()
     try:
         workspace = task_workspace(task.id)
         output_dir = Path(tempfile.mkdtemp(prefix="result-", dir=ROOT))
@@ -925,6 +928,8 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
             backend = "https://anymodel.org/v1"
         elif selected.startswith("compatible:"):
             backend = base_url
+        if backend and nvidia_chat.is_nvidia_endpoint(backend):
+            backend, provider_token = providers.enter_context(nvidia_chat.adapter(provider_token.strip()))
         runtime_options = codex_runtime_config(os.environ)
         provider_options: list[str] = []
         if backend:
@@ -1038,6 +1043,7 @@ def execute_task(task: Task, goal: str, selected: str, provider_token: str,
         task.error = message
         return 500, {"error": message, "task_id": task.id}
     finally:
+        providers.close()
         task.finished = time.time()
         try:
             if output_dir is not None and output_dir.exists():

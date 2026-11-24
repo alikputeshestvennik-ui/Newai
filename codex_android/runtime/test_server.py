@@ -421,6 +421,20 @@ send(method="turn/completed", params={"turn": {"status": "completed",
         with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
             self.assertEqual(self.request(self.bridge.SECRET, {"goal": "test", "selected": "compatible:gpt-4o", "base_url": "https://api.example.com/v1", "provider_token": "k"})[0], 200)
 
+    def test_nvidia_routes_codex_to_the_loopback_adapter(self):
+        def inspect(task, args, prompt, env, output, timeout):
+            self.assertNotEqual(env["TEN_PROVIDER_TOKEN"], "nvidia-key")
+            self.assertIn('wire_api="responses"', str(args))
+            self.assertIn("moonshotai/kimi-k3.1-pro", args)
+            self.assertRegex(str(args), r'base_url="http://127\.0\.0\.1:\d+"')
+
+        with patch.object(self.bridge, "run_process", side_effect=self.fake_run(inspect=inspect)):
+            status, _ = self.request(self.bridge.SECRET, {
+                "goal": "test", "selected": "compatible:moonshotai/kimi-k3.1-pro",
+                "base_url": "https://integrate.api.nvidia.com/v1/", "provider_token": "nvidia-key",
+            })
+            self.assertEqual(status, 200)
+
     def test_gh_token_passed_to_env(self):
         def inspect(task, args, prompt, env, output, timeout):
             self.assertEqual(env["GH_TOKEN"], "ghp_test")

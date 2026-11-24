@@ -509,9 +509,10 @@ object EmbeddedRuntime {
     private fun writeServer(ctx: Context, p: Paths) {
         val dir = File(p.home, "ten_runtime")
         dir.mkdirs()
-        val target = File(dir, "server.py")
-        ctx.assets.open("runtime/server.py").use { input ->
-            target.outputStream().use { output -> input.copyTo(output) }
+        for (name in listOf("nvidia_chat.py", "server.py")) {
+            ctx.assets.open("runtime/$name").use { input ->
+                File(dir, name).outputStream().use { output -> input.copyTo(output) }
+            }
         }
     }
 
